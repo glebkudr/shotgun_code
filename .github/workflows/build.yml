@@ -1,0 +1,105 @@
+name: Cross‑platform Build + Release — Shotgun Code
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write        
+
+env:
+  NODE_OPTIONS: "--max-old-space-size=4096"
+
+jobs:
+# ───────────────────────── BUILD ─────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ─────────── Linux ───────────
+          - os: ubuntu-latest
+            platform: linux/amd64
+            build_name: shotgun-code-linux-amd64
+            artifact_name: shotgun_code-linux-amd64
+            package: false
+            artifact_path: build/bin/shotgun-code-linux-amd64
+
+          # ────────── Windows ──────────
+          - os: windows-latest
+            platform: windows/amd64
+            build_name: shotgun-code-windows-amd64.exe
+            artifact_name: shotgun_code-windows-amd64
+            package: false
+            artifact_path: build/bin/shotgun-code-windows-amd64.exe
+
+          # ─────────── macOS ───────────
+          - os: macos-latest
+            platform: darwin/arm64
+            build_name: shotgun-code                # .app
+            artifact_name: shotgun_code-darwin-arm64
+            package: true
+            artifact_path: build/bin/shotgun-code.app.zip
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: recursive
+
+      - name: Build Wails app (${{ matrix.platform }})
+        uses: dAppServer/wails-build-action@main
+        with:
+          build-name:     ${{ matrix.build_name }}
+          build-platform: ${{ matrix.platform }}
+          go-version:     '1.24'
+          package:        ${{ matrix.package }}
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error   
+
+# ─────────────────────── RELEASE ────────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shotgun_code-*      
+          path: release-assets
+          fail_on_no_artifact: true
+
+      - name: Prepare tag & release metadata
+        id: prep
+        run: |
+          TAG="v$(date -u '+%Y.%m.%d')-${GITHUB_SHA::7}"
+          echo "tag_name=$TAG"            >> $GITHUB_OUTPUT
+          echo "release_name=Shotgun Code $TAG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:  ${{ steps.prep.outputs.tag_name }}
+          name:      ${{ steps.prep.outputs.release_name }}
+          body: |
+            🔨 Automatic packaging от commit ${{ github.sha }}
+            Packages:
+            • Linux (amd64)  
+            • Windows (amd64)  
+            • macOS (Apple Silicon)  
+            Created with GitHub Actions.
+          draft: false
+          prerelease: false
+          
+          files: release-assets/**/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

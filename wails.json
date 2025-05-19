@@ -1,0 +1,14 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "shotgun-code",
+  "outputfilename": "shotgun-code",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "icon": "appicon.png",
+  "author": {
+    "name": "Gleb Curly",
+    "email": "glebkudr@gmail.com"
+  }
+}

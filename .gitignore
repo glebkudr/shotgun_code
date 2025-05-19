@@ -1,0 +1,68 @@
+# Go dependencies and build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.prof
+pkg/
+bin/
+vendor/
+
+# Wails specific
+build/appicon.png
+build/windows/
+build/darwin/
+build/linux/
+# frontend/wailsjs/  # Usually committed, but regenerated often. Uncomment if you prefer not to commit.
+
+# Frontend dependencies and build artifacts (Node.js / npm / yarn / pnpm)
+frontend/node_modules/
+frontend/dist/
+frontend/.DS_Store
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/coverage/
+frontend/.eslintcache
+frontend/.vite-inspect/
+
+# IDE specific
+.vscode/
+.idea/
+*.suo
+*.user
+*.sln.docstates
+
+# OS specific
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Log files
+*.log
+logs/
+*.log.*
+
+# Environment files
+.env
+.env.development
+.env.production
+# Keep .env.example or similar if you have one for template purposes
+# .env.example
+
+# Other
+*.swp
+*~
+*.bak
+*.tmp
+Show-DirectoryTree.ps1
+
+# If you have specific large files or data that shouldn't be in git
+# data/
+# assets_large/ 
