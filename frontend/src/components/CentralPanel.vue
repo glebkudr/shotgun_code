@@ -1,7 +1,20 @@
 <template>
-  <main class="flex-1 p-0 overflow-y-auto bg-white relative">
+  <main class="central-panel">
     <Step1CopyStructure v-if="currentStep === 1" @action="handleAction" :generated-context="shotgunPromptContext" :is-loading-context="props.isGeneratingContext" :project-root="props.projectRoot" :generation-progress="props.generationProgress" :platform="props.platform" />
-    <Step2ComposePrompt v-if="currentStep === 2" @action="handleAction" ref="step2Ref" :file-list-context="props.shotgunPromptContext" @update:finalPrompt="(val) => emit('update-composed-prompt', val)" :platform="props.platform" :user-task="props.userTask" :rules-content="props.rulesContent" :final-prompt="props.finalPrompt" @update:userTask="(val) => emit('update:userTask', val)" @update:rulesContent="(val) => emit('update:rulesContent', val)" />
+    <Step2ComposePrompt 
+  v-if="currentStep === 2" 
+  @action="handleAction" 
+  ref="step2Ref" 
+  :file-list-context="props.shotgunPromptContext" 
+  @update:finalPrompt="(val) => emit('update-composed-prompt', val)" 
+  :platform="props.platform" 
+  :user-task="props.userTask" 
+  :rules-content="props.rulesContent" 
+  :final-prompt="props.finalPrompt" 
+  :selected-template="props.selectedTemplate"
+  @update:userTask="(val) => emit('update:userTask', val)" 
+  @update:rulesContent="(val) => emit('update:rulesContent', val)" 
+/>
     <Step3ExecutePrompt v-if="currentStep === 3" @action="handleAction" ref="step3Ref" :initial-git-diff="initialGitDiff" :initial-split-line-limit="initialSplitLineLimit" @update:shotgunGitDiff="(val) => emit('update:shotgunGitDiff', val)" @update:splitLineLimit="(val) => emit('update:splitLineLimit', val)" />
     <Step4ApplyPatch v-if="currentStep === 4" @action="handleAction" :split-diffs="props.splitDiffs" :is-loading="props.isLoadingSplitDiffs" :platform="props.platform" :split-line-limit="initialSplitLineLimit" />
   </main>
@@ -27,7 +40,8 @@ const props = defineProps({
   splitDiffs: { type: Array, default: () => [] },
   isLoadingSplitDiffs: { type: Boolean, default: false },
   shotgunGitDiff: { type: String, default: '' },
-  splitLineLimitValue: { type: Number, default: 0 }
+  splitLineLimitValue: { type: Number, default: 0 },
+  selectedTemplate: { type: String, default: 'dev' }
 });
 
 const initialGitDiff = computed(() => {

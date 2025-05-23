@@ -1,7 +1,7 @@
 <template>
-  <div class="p-4 h-full flex flex-col">
-    <p class="text-gray-700 mb-4 text-center text-sm">
-      Write the task for the LLM in the central column and copy the final prompt
+  <div class="content-container max-w-4xl mx-auto p-4">
+    <p class="text-secondary text-center mb-4">
+      Write the task for the LLM and review the generated prompt
     </p>
 
     <CustomRulesModal
@@ -13,98 +13,60 @@
       @cancel="handleCancelPromptRules"
     />
 
-    <div class="flex-grow flex flex-row space-x-4 overflow-hidden">
-      <div class="w-1/2 flex flex-col space-y-3 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50">
-        <div>
-          <label for="user-task-ai" class="block text-sm font-medium text-gray-700 mb-1">Your task for AI:</label>
-          <textarea
-            id="user-task-ai"
-            v-model="localUserTask"
-            rows="15"
-            class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-            placeholder="Describe what the AI should do..."
-          ></textarea>
+    <div class="flex-grow flex flex-col space-y-4">
+      <!-- User Task Section -->
+      <div class="section-container">
+        <div class="section-header">
+          <label for="user-task-ai" class="section-label">Your task for AI:</label>
+          <button 
+            @click="openPromptRulesModal" 
+            title="Edit custom rules" 
+            class="btn-secondary text-xs"
+          >
+            <span class="mr-1">⚙️</span> Rules
+          </button>
         </div>
-
-        <div>
-          <label for="rules-content" class="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-            Custom rules:
-            <button @click="openPromptRulesModal" title="Edit custom prompt rules" class="ml-2 p-0.5 hover:bg-gray-200 rounded text-xs">⚙️</button>
-          </label>
-          <textarea
-            id="rules-content"
-            :value="rulesContent"
-            @input="e => emit('update:rulesContent', e.target.value)"
-            rows="8"
-            class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-sm font-mono"
-            placeholder="Rules for AI..."
-          ></textarea>
-        </div>
-
-        <div>
-          <label for="file-list-context" class="block text-sm font-medium text-gray-700 mb-1">Files to include:</label>
-          <textarea
-            id="file-list-context"
-            :value="props.fileListContext"
-            rows="20"
-            readonly
-            class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 font-mono text-xs"
-            placeholder="File list from Step 1 (Prepare Context) will appear here..."
-            style="min-height: 150px;"
-          ></textarea>
-        </div>
+        <textarea
+          id="user-task-ai"
+          v-model="localUserTask"
+          rows="6"
+          class="input-textarea resize-none mb-2"
+          placeholder="Describe what the AI should do..."
+        ></textarea>
       </div>
 
-      <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white">
-        <div class="flex justify-between items-center mb-2">
-          <div class="flex items-center space-x-2">
-            <h3 class="text-md font-medium text-gray-700">Prompt:</h3>
-            <select
-              v-model="selectedPromptTemplateKey"
-              class="ml-2 p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500"
-              :disabled="isLoadingFinalPrompt"
-              title="Select prompt template"
-            >
-              <option v-for="(template, key) in promptTemplates" :key="key" :value="key">
-                {{ template.name }}
-              </option>
-            </select>
-          </div>
-          <div class="flex items-center space-x-3">
-            <span
-              v-show="!isLoadingFinalPrompt"
-              :class="['text-xs font-medium', charCountColorClass]"
-              :title="tooltipText"
-            >
-              ~{{ approximateTokens }} tokens
-            </span>
-            <button
-              @click="copyFinalPromptToClipboard"
-              :disabled="!props.finalPrompt || isLoadingFinalPrompt"
-              class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
-            >
-              {{ copyButtonText }}
-            </button>
-          </div>
+      <!-- Prompt Section -->
+      <div class="section-container">
+        <div class="section-header">
+          <h3 class="text-subtitle">Prompt:</h3>
+          <button
+            @click="copyFinalPromptToClipboard"
+            :disabled="!props.finalPrompt || isLoadingFinalPrompt"
+            class="btn-primary text-xs"
+          >
+            {{ copyButtonText }}
+          </button>
         </div>
 
-        <div v-if="isLoadingFinalPrompt" class="flex-grow flex justify-center items-center">
-          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-          <p class="text-gray-500 ml-2">Updating prompt...</p>
+        <div v-if="isLoadingFinalPrompt" class="loading-state">
+          <div class="spinner"></div>
+          <p class="loading-text">Updating prompt...</p>
         </div>
 
         <textarea
           v-else
           :value="props.finalPrompt"
           @input="e => emit('update:finalPrompt', e.target.value)"
-          rows="20"
-          class="w-full p-2 border border-gray-300 rounded-md shadow-sm font-mono text-xs flex-grow"
+          rows="15"
+          class="input-textarea flex-grow"
           placeholder="The final prompt will be generated here..."
-          style="min-height: 300px;"
         ></textarea>
-         <p class="text-xs text-gray-500 mt-1">
-            The prompt updates automatically. Manual changes to this field may be overwritten when source data (task, rules, file list) is updated.
-        </p>
+        
+        <div class="prompt-footer">
+          <p class="text-hint">
+            The prompt updates automatically. Manual changes may be overwritten when source data is updated.
+          </p>
+        </div>
       </div>
     </div>
   </div>
@@ -142,19 +104,25 @@ const props = defineProps({
   finalPrompt: {
     type: String,
     default: ''
+  },
+  selectedTemplate: {
+    type: String,
+    default: 'dev'
   }
 });
 
-const emit = defineEmits(['update:finalPrompt', 'update:userTask', 'update:rulesContent']);
-
-const promptTemplates = {
-  dev: { name: 'Dev', content: devTemplateContentFromFile },
-  architect: { name: 'Architect', content: architectTemplateContentFromFile },
-  findBug: { name: 'Find Bug', content: findBugTemplateContentFromFile },
-  projectManager: { name: 'Project: Update Tasks', content: projectManagerTemplateContentFromFile },
+const templateContents = {
+  dev: devTemplateContentFromFile,
+  architect: architectTemplateContentFromFile,
+  findBug: findBugTemplateContentFromFile,
+  projectManager: projectManagerTemplateContentFromFile
 };
 
-const selectedPromptTemplateKey = ref('dev'); // Default template
+watch(() => props.selectedTemplate, () => {
+  updateFinalPrompt();
+});
+
+const emit = defineEmits(['update:finalPrompt', 'update:userTask', 'update:rulesContent']);
 
 const isLoadingFinalPrompt = ref(false);
 const copyButtonText = ref('Copy All');
@@ -162,7 +130,6 @@ const copyButtonText = ref('Copy All');
 let finalPromptDebounceTimer = null;
 let userTaskInputDebounceTimer = null;
 
-// Modal state for prompt rules
 const isPromptRulesModalVisible = ref(false);
 const currentPromptRulesForModal = ref('');
 
@@ -170,7 +137,6 @@ const isFirstMount = ref(true);
 
 const localUserTask = ref(props.userTask);
 
-// Character count and related computed properties
 const charCount = computed(() => {
   return (props.finalPrompt || '').length;
 });
@@ -183,11 +149,11 @@ const approximateTokens = computed(() => {
 const charCountColorClass = computed(() => {
   const count = charCount.value;
   if (count < 1000000) {
-    return 'text-green-600';
+    return 'text-success';
   } else if (count <= 4000000) {
-    return 'text-yellow-500'; // Using 500 for better visibility on white bg
+    return 'text-warning';
   } else {
-    return 'text-red-600';
+    return 'text-error';
   }
 });
 
@@ -227,22 +193,22 @@ onMounted(async () => {
 });
 
 async function updateFinalPrompt() {
+  if (isFirstMount.value) {
+    isFirstMount.value = false;
+    return;
+  }
+
   isLoadingFinalPrompt.value = true;
   await new Promise(resolve => setTimeout(resolve, 100));
 
-  const currentTemplateContent = promptTemplates[selectedPromptTemplateKey.value].content;
+  // Get the current template content based on the selected template
+  const currentTemplateContent = templateContents[props.selectedTemplate] || templateContents.dev;
   let populatedPrompt = currentTemplateContent;
+  
+  // Replace placeholders with actual content
   populatedPrompt = populatedPrompt.replace('{TASK}', props.userTask || "No task provided by the user.");
   populatedPrompt = populatedPrompt.replace('{RULES}', props.rulesContent);
-  populatedPrompt = populatedPrompt.replace('{FILE_STRUCTURE}', props.fileListContext || "No file structure context provided.");
-
-  // Insert current date in YYYY-MM-DD format
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const currentDate = `${yyyy}-${mm}-${dd}`;
-  populatedPrompt = populatedPrompt.replaceAll('{CURRENT_DATE}', currentDate);
+  populatedPrompt = populatedPrompt.replace('{FILE_LIST}', props.fileListContext);
 
   emit('update:finalPrompt', populatedPrompt);
   isLoadingFinalPrompt.value = false;
@@ -259,6 +225,11 @@ watch(() => props.userTask, (newValue) => {
   if (newValue !== localUserTask.value) {
     localUserTask.value = newValue;
   }
+  debouncedUpdateFinalPrompt();
+});
+
+watch(() => props.selectedTemplate, () => {
+  debouncedUpdateFinalPrompt();
 });
 
 watch(localUserTask, (currentValue) => {
@@ -270,14 +241,9 @@ watch(localUserTask, (currentValue) => {
   }, 300);
 });
 
-watch([() => props.userTask, () => props.rulesContent, () => props.fileListContext, selectedPromptTemplateKey], () => {
+watch([() => props.userTask, () => props.rulesContent, () => props.fileListContext], () => {
   debouncedUpdateFinalPrompt();
 }, { deep: true });
-
-watch(selectedPromptTemplateKey, () => {
-  LogInfoRuntime(`Prompt template changed to: ${promptTemplates[selectedPromptTemplateKey.value].name}. Updating final prompt.`);
-  debouncedUpdateFinalPrompt();
-});
 
 async function copyFinalPromptToClipboard() {
   if (!props.finalPrompt) return;
