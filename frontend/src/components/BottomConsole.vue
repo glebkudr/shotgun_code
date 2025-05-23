@@ -1,7 +1,7 @@
 <template>
   <div 
     :style="{ height: height + 'px' }" 
-    class="bg-gray-800 text-white p-3 text-xs overflow-y-auto flex flex-col-reverse select-text"
+    class="console-container overflow-y-auto flex flex-col-reverse select-text"
     ref="consoleRootRef"
   >
     <div ref="consoleContentRef" class="flex-grow">
@@ -11,7 +11,7 @@
         <span v-if="log.type !== 'info'" class="font-semibold">[{{ log.type.toUpperCase() }}] </span>
         {{ log.message }}
       </div>
-      <div v-if="logMessages.length === 0" class="text-gray-500">
+      <div v-if="logMessages.length === 0" class="text-hint">
         Console is empty.
       </div>
     </div>
@@ -28,7 +28,7 @@ const props = defineProps({
   },
   height: {
     type: Number,
-    default: 150 // Default height if not provided
+    default: 150
   }
 });
 
@@ -49,7 +49,6 @@ function getLogColor(type) {
 watch(() => props.logMessages, () => {
   nextTick(() => {
     if (consoleRootRef.value) {
-      // Scroll to the bottom (which is top due to flex-col-reverse)
       consoleRootRef.value.scrollTop = 0;
     }
   });
@@ -57,28 +56,4 @@ watch(() => props.logMessages, () => {
 
 </script>
 
-<style scoped>
-.select-text {
-  user-select: text;
-}
-
-div {
-  scrollbar-width: thin; /* For Firefox */
-  scrollbar-color: #555 #333; /* For Firefox - thumb and track */
-}
-
-/* For Chrome, Edge, and Safari */
-div::-webkit-scrollbar {
-  width: 8px;
-}
-
-div::-webkit-scrollbar-track {
-  background: #333; /* Darker track */
-}
-
-div::-webkit-scrollbar-thumb {
-  background-color: #555; /* Lighter thumb */
-  border-radius: 4px;
-  border: 2px solid #333; /* Match track for padding */
-}
-</style> 
+<!-- Styles moved to main.css --> 

@@ -1,27 +1,27 @@
 <template>
-  <div v-if="isVisible" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex justify-center items-center" @click.self="handleCancel">
-    <div class="relative mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
-      <div class="mt-3 text-center">
-        <h3 class="text-lg leading-6 font-medium text-gray-900">{{ title }}</h3>
-        <div class="mt-2 px-7 py-3">
+  <div v-if="isVisible" class="modal-overlay" @click.self="handleCancel">
+    <div class="modal-container">
+      <div class="modal-content">
+        <h3 class="modal-title">{{ title }}</h3>
+        <div class="modal-body">
           <textarea 
             v-model="editableRules"
             rows="15"
-            class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm font-mono bg-gray-50"
-            placeholder="Enter custom ignore patterns, one per line (e.g., *.log, node_modules/)"
+            class="modal-textarea"
+            :placeholder="ruleType === 'prompt' ? 'Enter custom prompt rules...' : 'Enter custom ignore patterns, one per line (e.g., *.log, node_modules/)'"
           ></textarea>
-          <p class="text-xs text-gray-500 mt-1 text-left">{{ descriptionText }}</p>
+          <p class="modal-hint">{{ descriptionText }}</p>
         </div>
-        <div class="items-center px-4 py-3">
+        <div class="modal-actions">
           <button
             @click="handleSave"
-            class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 mr-2"
+            class="btn-primary"
           >
             Save
           </button>
           <button
             @click="handleCancel"
-            class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+            class="btn-secondary"
           >
             Cancel
           </button>
@@ -30,6 +30,107 @@
     </div>
   </div>
 </template>
+
+<style scoped>
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+  height: 100%;
+  width: 100%;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(2px);
+  transition: opacity 0.2s ease-out;
+}
+
+.modal-container {
+  position: relative;
+  margin: 1rem;
+  width: 100%;
+  max-width: 42rem;
+  background-color: var(--surface-1);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow-elevation);
+  overflow: hidden;
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+  border: 1px solid var(--border-primary);
+}
+
+.modal-content {
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.modal-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 1rem 0;
+}
+
+.modal-body {
+  margin: 1rem 0;
+  padding: 0 0.5rem;
+}
+
+.modal-textarea {
+  width: 100%;
+  min-height: 15rem;
+  padding: 0.75rem;
+  border: 1px solid var(--input-border);
+  border-radius: 0.375rem;
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  resize: vertical;
+  transition: border-color 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.modal-textarea:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.modal-hint {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-hint);
+  text-align: left;
+  line-height: 1.4;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-secondary);
+  margin-top: 1.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .modal-container {
+    margin: 0.5rem;
+  }
+  
+  .modal-content {
+    padding: 1rem;
+  }
+  
+  .modal-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}
+</style>
 
 <script setup>
 import { ref, watch, defineProps, defineEmits, computed } from 'vue';
@@ -85,7 +186,3 @@ function handleCancel() {
   emit('cancel');
 }
 </script>
-
-<style scoped>
-/* Basic styling for modal, can be enhanced with Tailwind further if needed */
-</style> 

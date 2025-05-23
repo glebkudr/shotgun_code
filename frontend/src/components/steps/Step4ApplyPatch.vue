@@ -60,23 +60,18 @@
     
     <div class="mt-6 flex space-x-4 flex-shrink-0 flex-row justify-between">
       <div>
-        <h3 class="text-lg font-medium text-gray-700 mb-2">Coming soon</h3>
-        <p class="text-gray-600 text-sm">
-          - Apply Patch from Shotgun
-        </p>
-        <p class="text-gray-600 text-sm">
-          - Apply Patch automatically
+        <h3 class="text-lg font-medium text-gray-700 mb-2">Apply Patch automatically <sup class="text-xs text-white bg-green-500 rounded-md px-1 py-1">COMING SOON</sup></h3>
+        <p class="text-gray-600 italic text-xs">
+          Here you will review and apply the patch. For now, it’s a placeholder. Click ‘Finish’ to simulate completion.
         </p>
       </div>
-      <!--
       <button
       @click="$emit('action', 'finishSplitting'), finishButtonText = 'Hooray! 🎉'"
       class="px-6 py-2 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
       :class="finishButtonText === 'Hooray! 🎉' ? 'bg-green-200 text-black hover:bg-green-200' : ''"
       >
         {{ finishButtonText }}
-      </button> 
-      -->
+      </button>
     </div>
   </div>
 </template>

@@ -1,55 +1,74 @@
 <template>
-  <div class="p-6 flex flex-col h-full">
-    <h2 class="text-xl font-semibold text-gray-800 mb-2">Step 3: Execute Prompt</h2>
-    <p class="text-gray-600 mb-2">
-      <li>For now go to Google AI studio, copy the prompt and paste it there with 2.5 pro model with 0.1 temperature. It will give you <b>the diff</b></li>
-      <li>Then open any agentic code tool and ask 'apply diff' + copy-paste the diff. </li>
+  <div class="content-container p-6">
+    <h2 class="text-title mb-3">Step 3: Execute Prompt & Split Diff</h2>
+    <p class="text-secondary mb-3">
+      For now, please go to an external LLM provider like Google AI Studio or an equivalent.
+      Copy the full project context generated in Step 1 and the prompt you composed in Step 2.
+      Paste them into the LLM and obtain the resulting diff output.
     </p>
-    <p class="text-gray-600 mb-2">
-    <hr class="my-4"/>
-      <strong>Prepare the Diff to Apply</strong>
-      <br>
-      This tool will split the diff into smaller parts to make it easier to apply.
+    <p class="text-secondary mb-4">
+      Then, paste the full <code class="code-inline">gitDiff</code> output (the LLM's response) below.
+      You can also specify the approximate number of lines per split, or leave it as the total number of lines if you don't want to split the diff.
     </p>
-    <div class="mb-4">
-      <label for="shotgun-git-diff-input" class="block text-sm font-bold text-gray-700 mb-1">Git Diff Output:</label>
+
+    <div class="info-box mb-4">
+      <h4 class="info-title">Why Split the Diff?</h4>
+      <p class="text-secondary">
+        Sometimes, the generated diff is a large file that can be difficult to apply with some LLMs or review tools. 
+        Splitting it into smaller parts makes it easier to manage and reduces the risk of errors.
+      </p>
+    </div>
+
+    <div class="section-container mb-4">
+      <label for="shotgun-git-diff-input" class="section-label">Git Diff Output:</label>
       <textarea
         id="shotgun-git-diff-input"
         v-model="localShotgunGitDiffInput"
         rows="15"
-        class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm font-mono"
+        class="input-textarea font-mono"
         placeholder="Paste the git diff output here, e.g., diff --git a/file.txt b/file.txt..."
       ></textarea>
     </div>
 
-    <div class="mb-4">
-      <label for="split-line-limit" class="block text-sm font-bold text-gray-700 mb-1">Approx. Lines per Split:</label>
-      <p class="text-gray-600 mb-2 text-xs">
+    <div class="section-container mb-4">
+      <label for="split-line-limit" class="section-label">Approx. Lines per Split:</label>
+      <p class="text-hint mb-3">
         ⓘ This will attempt to split the diff into the specified number of lines, while keeping the original structure and the hunks.
         The exact number of lines per split is not guaranteed, but the diff will be split into as many parts as possible.
         <br>
         Leave this unchanged if you don't want to split the diff.
       </p>
-      <input
-        type="number"
-        id="split-line-limit"
-        v-model.number="localSplitLineLimit"
-        min="50"
-        step="50"
-        class="w-1/8 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-      />
-      <p class="text-gray-600 mb-2 text-xs mt-2">
-        Total number of lines: {{ shotgunGitDiffInputLines }} <a href="#" class="text-blue-500" title="Reset to this value" @click="resetSplitLineLimit">(reset to this value)</a>
-      </p>
+      <div class="flex items-center gap-4 mb-3">
+        <input
+          type="number"
+          id="split-line-limit"
+          v-model.number="localSplitLineLimit"
+          min="50"
+          step="50"
+          class="input-number w-32"
+        />
+        <span class="text-hint">
+          Total lines: {{ shotgunGitDiffInputLines }} 
+          <button 
+            @click="resetSplitLineLimit" 
+            class="text-link"
+            title="Reset to total number of lines"
+          >
+            (reset)
+          </button>
+        </span>
+      </div>
     </div>
 
-    <button
-      @click="handleSplitDiff"
-      :disabled="!localShotgunGitDiffInput.trim() || localSplitLineLimit <= 0"
-      class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 self-start disabled:bg-gray-400"
-    >
-      {{ localSplitLineLimit === shotgunGitDiffInputLines ? 'Proceed to Apply' : 'Split Diff & Proceed to Apply' }}
-    </button>
+    <div class="mt-6">
+      <button
+        @click="handleSplitDiff"
+        :disabled="!localShotgunGitDiffInput.trim() || localSplitLineLimit <= 0"
+        class="btn-primary w-full sm:w-auto"
+      >
+        {{ localSplitLineLimit === shotgunGitDiffInputLines ? 'Proceed to Apply' : 'Split Diff & Proceed to Apply' }}
+      </button>
+    </div>
   </div>
 </template>
 

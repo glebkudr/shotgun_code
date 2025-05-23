@@ -1,62 +1,98 @@
 <template>
-  <div class="flex flex-col h-screen bg-gray-100">
-    <HorizontalStepper :current-step="currentStep" :steps="steps" @navigate="navigateToStep" :key="`hstepper-${currentStep}-${steps.map(s=>s.completed).join('')}`" />
+  <div class="flex flex-col h-screen w-screen bg-primary overflow-hidden">
+    <!-- Top Bar -->
+    <TopBar @toggle-settings="toggleSettings" />
+    
     <div class="flex flex-1 overflow-hidden">
+      <!-- Left Sidebar - Navigation Only -->
       <LeftSidebar 
         :current-step="currentStep" 
         :steps="steps" 
+        :width="leftSidebarWidth"
+        @navigate="navigateToStep" 
+        @resize="handleLeftSidebarResize"
+      />
+      <!-- Central Panel -->
+      <CentralPanel 
+        :current-step="currentStep" 
+        :shotgun-prompt-context="shotgunPromptContext"
+        :generation-progress="generationProgressData"
+        :is-generating-context="isGeneratingContext"
+        :project-root="projectRoot" 
+        :platform="platform"
+        :user-task="userTask"
+        :rules-content="rulesContent"
+        :split-diffs="splitDiffs"
+        :is-loading-split-diffs="isLoadingSplitDiffs"
+        :final-prompt="finalPrompt"
+        :split-line-limit-value="splitLineLimitValue"
+        :shotgun-git-diff="shotgunGitDiff"
+        :selected-template="selectedTemplate"
+        @step-action="handleStepAction"
+        @update-composed-prompt="handleComposedPromptUpdate"
+        @update:user-task="handleUserTaskUpdate"
+        @update:rules-content="handleRulesContentUpdate"
+        @update:shotgunGitDiff="handleShotgunGitDiffUpdate"
+        @update:splitLineLimit="handleSplitLineLimitUpdate"
+        ref="centralPanelRef" 
+        class="flex-1"
+      />
+      
+      <!-- Right Sidebar - Context Sensitive -->
+      <RightSidebar
+        :current-step="currentStep"
         :project-root="projectRoot"
         :file-tree-nodes="fileTree"
         :use-gitignore="useGitignore"
         :use-custom-ignore="useCustomIgnore"
         :loading-error="loadingError"
-        @navigate="navigateToStep"
+        :rules-content="rulesContent"
+        :final-prompt="finalPrompt"
+        :selected-template="selectedTemplate"
+        :width="rightSidebarWidth"
         @select-folder="selectProjectFolderHandler"
         @toggle-gitignore="toggleGitignoreHandler"
         @toggle-custom-ignore="toggleCustomIgnoreHandler"
         @toggle-exclude="toggleExcludeNode"
         @custom-rules-updated="handleCustomRulesUpdated"
-        @add-log="({message, type}) => addLog(message, type)" />
-      <CentralPanel :current-step="currentStep" 
-                    :shotgun-prompt-context="shotgunPromptContext"
-                    :generation-progress="generationProgressData"
-                    :is-generating-context="isGeneratingContext"
-                    :project-root="projectRoot" 
-                    :platform="platform"
-                    :user-task="userTask"
-                    :rules-content="rulesContent"
-                    :split-diffs="splitDiffs"
-                    :is-loading-split-diffs="isLoadingSplitDiffs"
-                    :final-prompt="finalPrompt"
-                    :split-line-limit="splitLineLimitValue"
-                    :shotgun-git-diff="shotgunGitDiff"
-                    :split-line-limit-value="splitLineLimitValue"
-                    @step-action="handleStepAction"
-                    @update-composed-prompt="handleComposedPromptUpdate"
-                    @update:user-task="handleUserTaskUpdate"
-                    @update:rules-content="handleRulesContentUpdate"
-                    @update:shotgunGitDiff="handleShotgunGitDiffUpdate"
-                    @update:splitLineLimit="handleSplitLineLimitUpdate"
-                    ref="centralPanelRef" />
+        @template-change="handleTemplateChange"
+        @update:rules-content="handleRulesContentUpdate"
+        @step-completed="handleStepCompletion"
+        @resize="handleRightSidebarResize"
+      />
     </div>
     <div 
+      v-if="isConsoleVisible"
       @mousedown="startResize"
-      class="w-full h-2 bg-gray-300 hover:bg-gray-400 cursor-row-resize select-none"
+      class="console-resize-handle"
       title="Resize console height"
-    >
+    ></div>
+    <div class="flex justify-end px-2 py-1 bg-secondary border-t border-gray-300 dark:border-dark-border">
+      <button 
+        @click="toggleConsole" 
+        class="console-toggle"
+        :title="isConsoleVisible ? 'Hide console' : 'Show console'"
+      >
+        <span class="mr-1">{{ isConsoleVisible ? 'Hide Console' : 'Show Console' }}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" :class="{'transform rotate-180': !isConsoleVisible}">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
     </div>
-    <BottomConsole :log-messages="logMessages" :height="consoleHeight" ref="bottomConsoleRef" />
+    <BottomConsole v-if="isConsoleVisible" :log-messages="logMessages" :height="consoleHeight" ref="bottomConsoleRef" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import HorizontalStepper from './HorizontalStepper.vue';
 import LeftSidebar from './LeftSidebar.vue';
 import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
+import TopBar from './TopBar.vue';
+import RightSidebar from './RightSidebar.vue';
 import { ListFiles, RequestShotgunContextGeneration, SelectDirectory as SelectDirectoryGo, StartFileWatcher, StopFileWatcher, SetUseGitignore, SetUseCustomIgnore, SplitShotgunDiff } from '../../wailsjs/go/main/App';
 import { EventsOn, Environment } from '../../wailsjs/runtime/runtime';
+import themeStore from '../theme.js';
 
 const currentStep = ref(1);
 const steps = ref([
@@ -69,8 +105,9 @@ const steps = ref([
 const logMessages = ref([]);
 const centralPanelRef = ref(null); 
 const bottomConsoleRef = ref(null);
-const MIN_CONSOLE_HEIGHT = 50;
-const consoleHeight = ref(MIN_CONSOLE_HEIGHT); // Initial height in pixels
+const consoleMinHeight = 50;
+const consoleHeight = ref(parseInt(localStorage.getItem('shotgun-console-height')) || 150); // Initial height in pixels
+const isConsoleVisible = ref(false);
 
 function addLog(message, type = 'info', targetConsole = 'bottom') {
   const logEntry = {
@@ -108,6 +145,12 @@ const isLoadingSplitDiffs = ref(false);
 const splitDiffs = ref([]);
 const shotgunGitDiff = ref('');
 const splitLineLimitValue = ref(0); // Add new state variable
+const rightSidebarWidth = ref(parseInt(localStorage.getItem('shotgun-right-sidebar-width')) || 250);
+const leftSidebarWidth = ref(parseInt(localStorage.getItem('shotgun-left-sidebar-width')) || 250);
+const isResizing = ref(false);
+const startX = ref(0);
+const startWidth = ref(0);
+const selectedTemplate = ref('dev');
 let debounceTimer = null;
 
 // Watcher related
@@ -127,7 +170,6 @@ async function selectProjectFolderHandler() {
       fileTree.value = [];
       
       await loadFileTree(selectedDir);
-
       splitDiffs.value = []; // Clear any previous splits when new project selected
 
       if (!isFileTreeLoading.value && projectRoot.value) {
@@ -393,18 +435,12 @@ async function handleStepAction(actionName, payload) {
   }
 
   const currentStepObj = steps.value.find(s => s.id === currentStep.value);
-
+  
   switch (actionName) {
+    case 'generateShotgunContext':
+      debouncedTriggerShotgunContextGeneration();
+      break;
     case 'executePrompt':
-      if (!composedLlmPrompt.value) {
-        addLog("Cannot execute prompt: Prompt from Step 2 is empty.", 'warn', 'both');
-        return;
-      }
-      addLog(`Simulating backend: Executing prompt (LLM call)... \nPrompt Preview (first 100 chars): "${composedLlmPrompt.value.substring(0,100)}..."`, 'info', 'step');
-      // Here, you would actually send composedLlmPrompt.value to an LLM
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      addLog('Backend: LLM call simulated. (Mocked response/diff would be processed here).', 'info', 'step');
-      if (currentStepObj) currentStepObj.completed = true;
       // For now, just navigate to Step 4, as Step 3's "execution" is conceptual.
       // In a real app, Step 3 might display LLM output before proceeding.
       navigateToStep(4); 
@@ -426,7 +462,6 @@ async function handleStepAction(actionName, payload) {
         
         if (currentStepObj) currentStepObj.completed = true;
         navigateToStep(4);
-
       } catch (err) {
         const errorMsg = `Error splitting diff: ${err.message || err}`;
         addLog(errorMsg, 'error', 'bottom');
@@ -450,10 +485,25 @@ async function handleStepAction(actionName, payload) {
   }
 }
 
-const isResizing = ref(false);
+const tempConsoleHeight = ref(0);
+
+// Function to toggle console visibility
+function toggleConsole() {
+  isConsoleVisible.value = !isConsoleVisible.value;
+  
+  // If we're showing the console and it was previously collapsed to minimum height
+  if (isConsoleVisible.value && consoleHeight.value <= consoleMinHeight) {
+    consoleHeight.value = 150; // Reset to a reasonable default height
+  }
+}
 
 function startResize(event) {
   isResizing.value = true;
+  tempConsoleHeight.value = consoleHeight.value;
+  
+  // Add class to pause transitions during resize
+  document.documentElement.classList.add('resize-transition-paused');
+  
   document.addEventListener('mousemove', doResize);
   document.addEventListener('mouseup', stopResize);
   event.preventDefault(); 
@@ -462,15 +512,38 @@ function startResize(event) {
 function doResize(event) {
   if (!isResizing.value) return;
   const newHeight = window.innerHeight - event.clientY;
-  const minHeight = MIN_CONSOLE_HEIGHT;
+  const minHeight = consoleMinHeight;
   const maxHeight = window.innerHeight * 0.7;
+  
+  // Apply height directly for smoother resizing
   consoleHeight.value = Math.max(minHeight, Math.min(newHeight, maxHeight));
+  
+  // Also update the temporary height for reference
+  tempConsoleHeight.value = consoleHeight.value;
 }
 
 function stopResize() {
   isResizing.value = false;
+  
+  // Remove transition pause class
+  document.documentElement.classList.remove('resize-transition-paused');
+  
   document.removeEventListener('mousemove', doResize);
   document.removeEventListener('mouseup', stopResize);
+  
+  // Save the console height to localStorage for persistence
+  localStorage.setItem('shotgun-console-height', consoleHeight.value);
+}
+
+// Handle sidebar resize events
+function handleLeftSidebarResize(newWidth) {
+  leftSidebarWidth.value = newWidth;
+  localStorage.setItem('shotgun-left-sidebar-width', newWidth);
+}
+
+function handleRightSidebarResize(newWidth) {
+  rightSidebarWidth.value = newWidth;
+  localStorage.setItem('shotgun-right-sidebar-width', newWidth);
 }
 
 onMounted(() => {
@@ -607,7 +680,6 @@ function handleRulesContentUpdate(val) {
   rulesContent.value = val;
 }
 
-// Add handlers for the new updates
 function handleShotgunGitDiffUpdate(val) {
   shotgunGitDiff.value = val;
 }
@@ -616,10 +688,43 @@ function handleSplitLineLimitUpdate(val) {
   splitLineLimitValue.value = val;
 }
 
-</script>
-
-<style scoped>
-.flex-1 {
-  min-height: 0;
+function handleTemplateChange(templateKey) {
+  // Update the selected template
+  selectedTemplate.value = templateKey;
+  
+  // Trigger prompt update
+  if (currentStep.value === 2) {
+    // If we're on step 2, trigger the prompt update
+    debouncedTriggerShotgunContextGeneration();
+  }
+  
+  addLog(`Changed prompt template to: ${templateKey}`, 'info');
 }
-</style> 
+
+function toggleSettings() {
+  // Handle settings toggle
+  addLog('Settings toggled', 'info', 'bottom');
+  // Implement settings functionality here
+}
+
+function handleStepCompletion(stepId) {
+  // Mark the step as completed
+  const step = steps.value.find(s => s.id === stepId);
+  if (step) {
+    step.completed = true;
+    addLog(`Step ${stepId} marked as completed`, 'info');
+    
+    // If we're currently on this step, navigate to the next step
+    if (currentStep.value === stepId) {
+      const nextStepId = stepId + 1;
+      // Only navigate if the next step exists
+      const nextStep = steps.value.find(s => s.id === nextStepId);
+      if (nextStep) {
+        navigateToStep(nextStepId);
+        addLog(`Navigating to step ${nextStepId}`, 'info');
+      }
+    }
+  }
+}
+
+</script>
