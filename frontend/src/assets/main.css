@@ -112,56 +112,67 @@ body, html {
 }
 
 /* ============================================================================
-   CONSOLE STYLING
+   RESIZE HANDLES - Line 653+ Style (Subtle/Modern)
    ============================================================================ */
 
-/* Resize handles - common styles */
 .resize-handle {
+  content: '';
   position: absolute;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
   z-index: 10;
-  transition: background-color 0.2s ease;
+  background-color: var(--text-tertiary);
+  border-radius: 1px;
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Resize handle - horizontal (for sidebars) */
 .resize-handle.left,
 .resize-handle.right {
-  width: 6px;
+  width: 4px;
   height: 100%;
   top: 0;
   cursor: col-resize;
-  background-color: var(--border-primary);
+  background-color: var(--border-primary); 
 }
 
 .resize-handle.left {
-  right: -3px; /* Position on the right edge, centered on the border */
+  right: 0; 
 }
 
 .resize-handle.right {
-  left: -3px; /* Position on the left edge, centered on the border */
-}
-
-.resize-handle.left:hover,
-.resize-handle.right:hover {
-  background-color: var(--button-primary);
+  left: 0;
 }
 
 .resize-handle.left::before,
 .resize-handle.right::before {
   content: '';
   position: absolute;
-  top: 50%;
   left: 50%;
+  top: 50%;
   transform: translate(-50%, -50%);
-  height: 30px;
   width: 2px;
+  height: 30px;
   background-color: var(--text-tertiary);
   border-radius: 1px;
 }
 
-/* Console resize handle - vertical */
+.resize-transition-paused * {
+  transition: none !important;
+}
+
+.resize-handle:hover {
+  background-color: rgba(59, 130, 246, 0.2); 
+}
+
+.resize-handle.resizing {
+  background-color: var(--button-primary); 
+}
+
 .console-resize-handle {
   width: 100%;
-  height: 6px;
+  height: 4px;
   background-color: var(--border-primary);
   cursor: row-resize;
   transition: background-color 0.2s ease;
@@ -184,10 +195,9 @@ body, html {
   border-radius: 1px;
 }
 
-/* Add this class to the html element during resize to prevent flickering */
-.resize-transition-paused * {
-  transition: none !important;
-}
+/* ============================================================================
+   CONSOLE STYLING
+   ============================================================================ */
 
 /* Console toggle button */
 .console-toggle {
@@ -601,42 +611,6 @@ body, html {
 .sidebar-container.right-sidebar {
   border-left: 1px solid var(--border-primary);
   border-right: none;
-}
-
-.resize-handle {
-  position: absolute;
-  top: 0;
-  width: 6px;
-  height: 100%;
-  cursor: col-resize;
-  z-index: 10;
-  background-color: transparent;
-  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.resize-handle:hover {
-  background-color: rgba(59, 130, 246, 0.2);
-}
-
-.resize-handle.resizing {
-  background-color: var(--button-primary);
-}
-
-body.resizing {
-  cursor: col-resize !important;
-  user-select: none;
-}
-
-body.resizing .sidebar-container {
-  transition: none;
-}
-
-.resize-handle.left {
-  right: 0;
-}
-
-.resize-handle.right {
-  left: 0;
 }
 
 .content-container {
@@ -1171,37 +1145,6 @@ body.resizing .sidebar-container {
    ENHANCED STEP 2 COMPONENT
    ============================================================================ */
 
-.section-container {
-  background: var(--surface-2);
-  border: 1px solid var(--border-primary);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-bottom: 1rem;
-  box-shadow: var(--shadow-elevation);
-  flex: 1;
-  min-height: 250px;
-}
-
-.section-container:hover {
-  box-shadow: var(--shadow-elevation), var(--glow-subtle);
-  transform: translateY(-1px);
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.section-label {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
 
 .loading-state {
   flex-grow: 1;
@@ -1516,4 +1459,85 @@ body.resizing .sidebar-container {
     --border-primary: #ffffff;
     --text-primary: #ffffff;
   }
+}
+
+/* ============================================================================
+   SIDEBAR SECTION STYLING
+   ============================================================================ */
+
+  .section-container {
+  background: var(--surface-2);
+  border: 1px solid var(--border-primary);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-elevation);
+  flex: 1;
+  min-height: 250px;
+}
+
+.section-container:hover {
+  box-shadow: var(--shadow-elevation), var(--glow-subtle);
+  transform: translateY(-1px);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.section-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+  
+
+.section-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-tertiary);
+  font-size: 1rem;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.section-toggle:hover {
+  background-color: var(--button-secondary-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-container .flex.justify-end.mb-2 .btn-sm {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: var(--button-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: 0.375rem;
+  line-height: 1.25;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.sidebar-container .flex.justify-end.mb-2 .btn-sm:hover {
+  background-color: var(--button-secondary-hover);
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
+.sidebar-container .flex.justify-end.mb-2 .btn-sm:active {
+  background-color: var(--border-primary);
+}
+
+.sidebar-container .flex.justify-end.mb-2 .btn-sm span.text-xs {
+  font-size: inherit;
+  font-weight: inherit;
 }

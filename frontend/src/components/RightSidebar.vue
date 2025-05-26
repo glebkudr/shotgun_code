@@ -9,130 +9,206 @@
     @cancel="handleCancelCustomRules"
   />
   <aside class="sidebar-container right-sidebar relative" :style="{ width: width + 'px' }">
-    <div class="resize-handle right" @mousedown="startResize"></div>
-    <div v-if="currentStep === 1" class="h-full flex flex-col p-4">
-      <div class="mb-4">
-        <button 
-          @click="handleSelectFolder"
-          class="btn-primary w-full mb-2 flex items-center justify-center"
-          :disabled="isSelecting"
-        >
-          <span v-if="isSelecting" class="mr-2 animate-spin">⟳</span>
-          {{ isSelecting ? 'Selecting...' : 'Select Project Folder' }}
+          <!-- Collapse Controls -->
+      <div class="flex justify-end mb-2">
+        <button @click="expandAllSections()" class="btn-sm mr-2" title="Expand all sections">
+          <span class="text-xs">Expand All</span>
         </button>
-        <div v-if="projectRoot" class="text-hint mb-2 break-all">Selected: {{ projectRoot }}</div>
+        <button @click="collapseAllSections()" class="btn-sm" title="Collapse all sections">
+          <span class="text-xs">Collapse All</span>
+        </button>
       </div>
       
-      <div v-if="projectRoot" class="mb-4">
-        <div class="checkbox-container">
-          <input 
-            type="checkbox" 
-            id="gitignore-toggle"
-            :checked="useGitignore"
-            @change="$emit('toggle-gitignore', $event.target.checked)"
-            class="input-checkbox"
-          />
-          <label for="gitignore-toggle" class="text-body" title="Uses .gitignore file if present in the project folder">
-            Use .gitignore rules
-          </label>
+    <div class="resize-handle right" @mousedown="startResize"></div>
+    <div v-if="currentStep === 1" class="h-full flex flex-col p-4">
+      <!-- Step 1: Project Selection -->
+      <!-- Project Selection Section (not collapsible) -->
+      <div class="section mb-4">
+        <div class="section-header non-collapsible">
+          <h2 class="text-subtitle">Project Selection</h2>
         </div>
-        
-        <div class="checkbox-container mt-2">
-          <input
-            type="checkbox"
-            id="custom-rules-toggle"
-            :checked="useCustomIgnore"
-            @change="$emit('toggle-custom-ignore', $event.target.checked)"
-            class="input-checkbox"
-          />
-          <label for="custom-rules-toggle" class="flex items-center text-body font-medium" title="Uses ignore.glob file if present in the project folder">
-            <span>Use custom rules</span>
-            <button @click="openCustomRulesModal('ignore')" title="Edit custom ignore rules" class="btn-icon ml-2 text-sm">⚙️</button>
-          </label>
+        <div class="section-content">
+          <button 
+            @click="handleSelectFolder"
+            class="btn-primary w-full mb-2 flex items-center justify-center"
+            :disabled="isSelecting"
+          >
+            <span v-if="isSelecting" class="mr-2 animate-spin">⟳</span>
+            {{ isSelecting ? 'Selecting...' : 'Select Project Folder' }}
+          </button>
+          <div v-if="projectRoot" class="text-hint mb-2 break-all">Selected: {{ projectRoot }}</div>
+        </div>      </div>
+      
+      <!-- Ignore Rules Section - Always visible and collapsible -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('ignoreRules')">
+          <h2 class="text-subtitle">Ignore Rules</h2>
+          <span class="section-toggle">{{ sectionStates.ignoreRules ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="sectionStates.ignoreRules" class="section-content">
+          <div v-if="!projectRoot" class="text-hint p-2">
+            Select a project folder to configure ignore rules
+          </div>
+          <div v-else>
+            <div class="checkbox-container">
+              <input 
+                type="checkbox" 
+                id="gitignore-toggle"
+                :checked="useGitignore"
+                @change="$emit('toggle-gitignore', $event.target.checked)"
+                class="input-checkbox"
+              />
+              <label for="gitignore-toggle" class="text-body" title="Uses .gitignore file if present in the project folder">
+                Use .gitignore rules
+              </label>
+            </div>
+            
+            <div class="checkbox-container mt-2">
+              <input
+                type="checkbox"
+                id="custom-rules-toggle"
+                :checked="useCustomIgnore"
+                @change="$emit('toggle-custom-ignore', $event.target.checked)"
+                class="input-checkbox"
+              />
+              <label for="custom-rules-toggle" class="flex items-center text-body font-medium" title="Uses ignore.glob file if present in the project folder">
+                <span>Use custom rules</span>
+                <button @click="openCustomRulesModal('ignore')" title="Edit custom ignore rules" class="btn-icon ml-2 text-sm">⚙️</button>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
-      <h2 class="text-subtitle mb-3">Project Files</h2>
-      <div class="file-tree-container flex-grow overflow-auto">
-        <div v-if="loadingError" class="text-error p-2">
-          {{ loadingError }}
+      <!-- Project Files Section -->
+      <div class="section flex-grow">
+        <div class="section-header" @click="toggleSection('projectFiles')">
+          <h2 class="text-subtitle">Project Files</h2>
+          <span class="section-toggle">{{ sectionStates.projectFiles ? '▼' : '▶' }}</span>
         </div>
-        <div v-else-if="!projectRoot" class="text-hint p-2">
-          Select a project folder to view files
+        <div v-if="sectionStates.projectFiles" class="section-content file-tree-container overflow-auto">
+          <div v-if="loadingError" class="text-error p-2">
+            {{ loadingError }}
+          </div>
+          <div v-else-if="!projectRoot" class="text-hint p-2">
+            Select a project folder to view files
+          </div>
+          <div v-else-if="fileTreeNodes.length === 0" class="text-hint p-2">
+            No files found in the selected directory
+          </div>
+          <FileTree 
+            v-else 
+            :nodes="fileTreeNodes" 
+            @toggle-exclude="$emit('toggle-exclude', $event)"
+          />
         </div>
-        <div v-else-if="fileTreeNodes.length === 0" class="text-hint p-2">
-          No files found in the selected directory
-        </div>
-        <FileTree 
-          v-else 
-          :nodes="fileTreeNodes" 
-          @toggle-exclude="$emit('toggle-exclude', $event)"
-        />
       </div>
     </div>
 
     <div v-else-if="currentStep === 2" class="h-full flex flex-col p-4">
       <!-- Step 2: Prompt Properties -->
-      <h2 class="text-subtitle mb-4">Prompt Settings</h2>
       
-      <div class="mb-4">
-        <label class="block text-sm font-medium mb-2 text-body">Template Selection</label>
-        <div class="relative" ref="dropdownRef">
-          <button 
-            @click="toggleDropdown" 
-            type="button" 
-            class="custom-dropdown-button w-full flex items-center justify-between text-left"
-          >
-            <span>{{ promptTemplates[selectedPromptTemplate].name }}</span>
-            <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-            </svg>
-          </button>
-          <!-- Dropdown menu -->
-          <div v-if="isDropdownOpen" class="custom-dropdown-menu w-full">
+      <!-- Template Selection Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('templateSelection')">
+          <h2 class="text-subtitle">Template Selection</h2>
+          <span class="section-toggle">{{ sectionStates.templateSelection ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="sectionStates.templateSelection" class="section-content">
+          <div class="relative" ref="dropdownRef">
             <button 
-              v-for="(template, key) in promptTemplates" 
-              :key="key" 
-              @click="selectTemplate(key)"
-              class="custom-dropdown-item"
-              :class="{'active': selectedPromptTemplate === key}"
+              @click="toggleDropdown" 
+              type="button" 
+              class="custom-dropdown-button w-full flex items-center justify-between text-left"
             >
-              {{ template.name }}
+              <span>{{ promptTemplates[selectedPromptTemplate].name }}</span>
+              <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
             </button>
+            <!-- Dropdown menu -->
+            <div v-if="isDropdownOpen" class="custom-dropdown-menu w-full">
+              <button 
+                v-for="(template, key) in promptTemplates" 
+                :key="key" 
+                @click="selectTemplate(key)"
+                class="custom-dropdown-item"
+                :class="{'active': selectedPromptTemplate === key}"
+              >
+                {{ template.name }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
       
-      <div class="mb-4">
-        <div class="flex items-center justify-between mb-2">
-          <label class="block text-sm font-medium text-body">Custom Rules</label>
-          <button 
-            @click="openCustomRulesModal('prompt')" 
-            title="Edit custom prompt rules" 
-            class="btn-icon"
-          >⚙️</button>
+      <!-- File Tree Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('promptFileTree')">
+          <h2 class="text-subtitle">Project Files</h2>
+          <span class="section-toggle">{{ sectionStates.promptFileTree ? '▼' : '▶' }}</span>
         </div>
-        <textarea
-          :value="localRulesContent"
-          rows="5"
-          class="input-textarea resize-none text-sm w-full"
-          style="max-height: 120px;"
-          placeholder="Rules for AI..."
-          @input="$emit('update:rules-content', localRulesContent)"
-        ></textarea>
+        <div v-if="sectionStates.promptFileTree" class="section-content file-tree-container overflow-auto" style="max-height: 200px;">
+          <div v-if="loadingError" class="text-error p-2">
+            {{ loadingError }}
+          </div>
+          <div v-else-if="!projectRoot" class="text-hint p-2">
+            Select a project folder to view files
+          </div>
+          <div v-else-if="fileTreeNodes.length === 0" class="text-hint p-2">
+            No files found in the selected directory
+          </div>
+          <FileTree 
+            v-else 
+            :nodes="fileTreeNodes" 
+            @toggle-exclude="$emit('toggle-exclude', $event)"
+          />
+        </div>
       </div>
       
-      <div class="mt-6">
-        <h3 class="text-sm font-medium mb-2 text-body">Token Count</h3>
-        <div class="token-counter w-full">
-          <span
-            v-show="!isLoadingFinalPrompt"
-            :class="['text-body font-medium', charCountColorClass]"
-            :title="tooltipText">
-            <span class="font-normal">Token:</span> {{ approximateTokens }}
-          </span>
-          <div class="mt-1 text-xs text-hint">
-            This is an approximation based on the current prompt.
+      <!-- Custom Rules Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('customRules')">
+          <h2 class="text-subtitle">Custom Rules</h2>
+          <span class="section-toggle">{{ sectionStates.customRules ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="sectionStates.customRules" class="section-content">
+          <div class="flex items-center justify-between mb-2">
+            <label class="block text-sm font-medium text-body">Rules Content</label>
+            <button 
+              @click="openCustomRulesModal('prompt')" 
+              title="Edit custom prompt rules" 
+              class="btn-icon"
+            >⚙️</button>
+          </div>
+          <textarea
+            :value="localRulesContent"
+            rows="5"
+            class="input-textarea resize-none text-sm w-full"
+            style="max-height: 120px;"
+            placeholder="Rules for AI..."
+            @input="$emit('update:rules-content', localRulesContent)"
+          ></textarea>
+        </div>
+      </div>
+      
+      <!-- Token Counter Section -->
+      <div class="section">
+        <div class="section-header" @click="toggleSection('tokenCounter')">
+          <h2 class="text-subtitle">Token Count</h2>
+          <span class="section-toggle">{{ sectionStates.tokenCounter ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="sectionStates.tokenCounter" class="section-content">
+          <div class="token-counter w-full">
+            <span
+              v-show="!isLoadingFinalPrompt"
+              :class="['text-body font-medium', charCountColorClass]"
+              :title="tooltipText">
+              <span class="font-normal">Token:</span> {{ approximateTokens }}
+            </span>
+            <div class="mt-1 text-xs text-hint">
+              This is an approximation based on the current prompt.
+            </div>
           </div>
         </div>
       </div>
@@ -140,115 +216,150 @@
 
     <div v-else-if="currentStep === 3" class="h-full flex flex-col p-4">
       <!-- Step 3: Execution Properties -->
-      <h2 class="text-subtitle mb-4">Execution Settings</h2>
       
-      <div class="mb-4">
-        <label class="block text-sm font-medium mb-2 text-body">Model Selection</label>
-        <div class="relative" ref="modelDropdownRef">
-          <button 
-            @click="toggleModelDropdown" 
-            type="button" 
-            class="custom-dropdown-button w-full flex items-center justify-between text-left"
-          >
-            <span>{{ selectedModel }}</span>
-            <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-            </svg>
-          </button>
-          <!-- Dropdown menu -->
-          <div v-if="isModelDropdownOpen" class="custom-dropdown-menu w-full">
+      <!-- Model Selection Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('modelSelection')">
+          <h2 class="text-subtitle">Model Selection</h2>
+          <span class="section-toggle">{{ sectionStates.modelSelection ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="sectionStates.modelSelection" class="section-content">
+          <div class="relative" ref="modelDropdownRef">
             <button 
-              v-for="model in modelOptions" 
-              :key="model" 
-              @click="selectModel(model)"
-              class="custom-dropdown-item"
-              :class="{'active': selectedModel === model}"
+              @click="toggleModelDropdown" 
+              type="button" 
+              class="custom-dropdown-button w-full flex items-center justify-between text-left"
             >
-              {{ model }}
+              <span>{{ selectedModel }}</span>
+              <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
             </button>
+            <!-- Dropdown menu -->
+            <div v-if="isModelDropdownOpen" class="custom-dropdown-menu w-full">
+              <button 
+                v-for="model in modelOptions" 
+                :key="model" 
+                @click="selectModel(model)"
+                class="custom-dropdown-item"
+                :class="{'active': selectedModel === model}"
+              >
+                {{ model }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
       
-      <div class="mb-4">
-        <label class="block text-sm font-medium mb-2 text-body">Temperature</label>
-        <div class="flex items-center">
-          <input 
-            type="range" 
-            min="0" 
-            max="1" 
-            step="0.1" 
-            v-model="temperature" 
-            class="w-full mr-2 slider-input accent-primary"
-          />
-          <span class="text-sm font-mono text-body">{{ temperature }}</span>
+      <!-- Temperature Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('temperature')">
+          <h2 class="text-subtitle">Temperature</h2>
+          <span class="section-toggle">{{ sectionStates.temperature ? '▼' : '▶' }}</span>
         </div>
-        <p class="text-xs text-hint mt-1">
-          Lower values = more deterministic, higher values = more creative
-        </p>
+        <div v-if="sectionStates.temperature" class="section-content">
+          <div class="flex items-center">
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.1" 
+              v-model="temperature" 
+              class="w-full mr-2 slider-input accent-primary"
+            />
+            <span class="text-sm font-mono text-body">{{ temperature }}</span>
+          </div>
+          <p class="text-xs text-hint mt-1">
+            Lower values = more deterministic, higher values = more creative
+          </p>
+        </div>
       </div>
       
-      <div>
-        <label class="block text-sm font-medium mb-2 text-body">Advanced Options</label>
-        <div class="checkbox-container">
-          <input type="checkbox" id="stream-output" class="input-checkbox" />
-          <label for="stream-output" class="text-body">Stream output</label>
+      <!-- Advanced Options Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('advancedOptions')">
+          <h2 class="text-subtitle">Advanced Options</h2>
+          <span class="section-toggle">{{ sectionStates.advancedOptions ? '▼' : '▶' }}</span>
         </div>
-        <div class="checkbox-container mt-2">
-          <input type="checkbox" id="save-history" class="input-checkbox" />
-          <label for="save-history" class="text-body">Save conversation history</label>
+        <div v-if="sectionStates.advancedOptions" class="section-content">
+          <div class="checkbox-container">
+            <input type="checkbox" id="stream-output" class="input-checkbox" />
+            <label for="stream-output" class="text-body">Stream output</label>
+          </div>
+          <div class="checkbox-container mt-2">
+            <input type="checkbox" id="save-history" class="input-checkbox" />
+            <label for="save-history" class="text-body">Save conversation history</label>
+          </div>
         </div>
       </div>
     </div>
 
-    <div v-else-if="currentStep === 4" class="h-full flex flex-col">
+    <div v-else-if="currentStep === 4" class="h-full flex flex-col p-4">
       <!-- Step 4: Patch Properties -->
-      <h2 class="text-subtitle mb-4">Patch Settings</h2>
       
-      <div class="mb-4">
-        <label class="block text-sm font-medium mb-2 text-body">Patch Format</label>
-        <div class="relative" ref="patchFormatDropdownRef">
-          <button 
-            @click="togglePatchFormatDropdown" 
-            type="button" 
-            class="custom-dropdown-button w-full flex items-center justify-between text-left"
-          >
-            <span>{{ selectedPatchFormat }}</span>
-            <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-            </svg>
-          </button>
-          <!-- Dropdown menu -->
-          <div v-if="isPatchFormatDropdownOpen" class="custom-dropdown-menu w-full">
+      <!-- Patch Format Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('patchFormat')">
+          <h2 class="text-subtitle">Patch Format</h2>
+          <span class="section-toggle">{{ sectionStates.patchFormat ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="sectionStates.patchFormat" class="section-content">
+          <div class="relative" ref="patchFormatDropdownRef">
             <button 
-              v-for="format in patchFormatOptions" 
-              :key="format.value" 
-              @click="selectPatchFormat(format)"
-              class="custom-dropdown-item"
-              :class="{'active': selectedPatchFormat === format.label}"
+              @click="togglePatchFormatDropdown" 
+              type="button" 
+              class="custom-dropdown-button w-full flex items-center justify-between text-left"
             >
-              {{ format.label }}
+              <span>{{ selectedPatchFormat }}</span>
+              <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
             </button>
+            <!-- Dropdown menu -->
+            <div v-if="isPatchFormatDropdownOpen" class="custom-dropdown-menu w-full">
+              <button 
+                v-for="format in patchFormatOptions" 
+                :key="format.value" 
+                @click="selectPatchFormat(format)"
+                class="custom-dropdown-item"
+                :class="{'active': selectedPatchFormat === format.label}"
+              >
+                {{ format.label }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
       
-      <div class="mb-4">
-        <div class="checkbox-container">
-          <input type="checkbox" id="include-context" class="input-checkbox" checked />
-          <label for="include-context" class="text-body">Include context lines</label>
+      <!-- Context Options Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('contextOptions')">
+          <h2 class="text-subtitle">Context Options</h2>
+          <span class="section-toggle">{{ sectionStates.contextOptions ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="sectionStates.contextOptions" class="section-content">
+          <div class="checkbox-container">
+            <input type="checkbox" id="include-context" class="input-checkbox" checked />
+            <label for="include-context" class="text-body">Include context lines</label>
+          </div>
         </div>
       </div>
       
-      <div>
-        <label class="block text-sm font-medium mb-2 text-body">Apply Options</label>
-        <div class="checkbox-container">
-          <input type="checkbox" id="create-backup" class="input-checkbox" checked />
-          <label for="create-backup" class="text-body">Create backup files</label>
+      <!-- Apply Options Section -->
+      <div class="section mb-4">
+        <div class="section-header" @click="toggleSection('applyOptions')">
+          <h2 class="text-subtitle">Apply Options</h2>
+          <span class="section-toggle">{{ sectionStates.applyOptions ? '▼' : '▶' }}</span>
         </div>
-        <div class="checkbox-container mt-2">
-          <input type="checkbox" id="auto-commit" class="input-checkbox" />
-          <label for="auto-commit" class="text-body">Auto-commit changes</label>
+        <div v-if="sectionStates.applyOptions" class="section-content">
+          <div class="checkbox-container">
+            <input type="checkbox" id="create-backup" class="input-checkbox" checked />
+            <label for="create-backup" class="text-body">Create backup files</label>
+          </div>
+          <div class="checkbox-container mt-2">
+            <input type="checkbox" id="auto-commit" class="input-checkbox" />
+            <label for="auto-commit" class="text-body">Auto-commit changes</label>
+          </div>
         </div>
       </div>
     </div>
@@ -321,12 +432,50 @@ const promptTemplates = {
 
 const selectedPromptTemplate = ref(props.selectedTemplate);
 const isDropdownOpen = ref(false);
-const dropdownRef = ref(null);
-
 const isModelDropdownOpen = ref(false);
-const modelDropdownRef = ref(null);
 const isPatchFormatDropdownOpen = ref(false);
+const dropdownRef = ref(null);
+const modelDropdownRef = ref(null);
 const patchFormatDropdownRef = ref(null);
+
+// Section collapsible states
+const sectionStates = ref({
+  projectSelection: true,
+  ignoreRules: true,
+  projectFiles: true,
+  templateSelection: true,
+  promptFileTree: true,
+  customRules: true,
+  tokenCounter: true,
+  modelSelection: true,
+  temperature: true,
+  advancedOptions: true,
+  patchFormat: true,
+  contextOptions: true,
+  applyOptions: true
+});
+
+// Toggle section visibility
+function toggleSection(sectionName) {
+  sectionStates.value[sectionName] = !sectionStates.value[sectionName];
+}
+
+// Expand all sections
+function expandAllSections() {
+  Object.keys(sectionStates.value).forEach(key => {
+    sectionStates.value[key] = true;
+  });
+}
+
+// Collapse all sections
+function collapseAllSections() {
+  Object.keys(sectionStates.value).forEach(key => {
+    sectionStates.value[key] = true; // Keep projectSelection expanded
+    if (key !== 'projectSelection') {
+      sectionStates.value[key] = false;
+    }
+  });
+}
 
 // Model options
 const modelOptions = ['GPT-4', 'GPT-3.5 Turbo', 'Claude 3'];
@@ -411,7 +560,7 @@ const temperature = ref(0.7);
 
 // Clean up event listeners when component is unmounted
 onUnmounted(() => {
-  document.removeEventListener('mousemove', handleResize);
+  document.removeEventListener('mousemove', doResize);
   document.removeEventListener('mouseup', stopResize);
 });
 
@@ -491,12 +640,11 @@ function startResize(event) {
 function doResize(event) {
   if (!isResizing.value) return;
   
-  const dx = startX.value - event.clientX; // Note: for right sidebar, we subtract
+  const dx = startX.value - event.clientX;
   const newWidth = startWidth.value + dx;
   
-  // Set min and max width constraints
   const minWidth = 180;
-  const maxWidth = window.innerWidth * 0.4; // 40% of window width
+  const maxWidth = window.innerWidth * 0.4; 
   
   if (newWidth >= minWidth && newWidth <= maxWidth) {
     emit('resize', newWidth);
