@@ -16,6 +16,7 @@
       <CentralPanel 
         :current-step="currentStep" 
         :shotgun-prompt-context="shotgunPromptContext"
+        :file-structure-context="fileStructureContext"
         :generation-progress="generationProgressData"
         :is-generating-context="isGeneratingContext"
         :project-root="projectRoot" 
@@ -67,16 +68,41 @@
       class="console-resize-handle"
       title="Resize console height"
     ></div>
-    <div class="flex justify-end px-2 py-1 bg-secondary border-t border-gray-300 dark:border-dark-border">
+    <div class="status-bar">
+      <div class="status-item" v-if="currentStep >= 2">
+        <span class="status-item-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+          </svg>
+        </span>
+        <span class="token-counter">
+          <span class="font-normal">Token: </span> 
+          <span class="font-medium">{{ approximateTokens }}</span>
+          <span class="text-xs text-hint ml-2">(approximation)</span>
+        </span>
+      </div>
+      <div v-else class="status-item">
+        <span class="status-item-icon status-item-warning">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </span>
+        <span>No prompt composed yet</span>
+      </div>
+
+      <div class="flex-grow"></div>
+
       <button 
         @click="toggleConsole" 
-        class="console-toggle"
+        class="status-item"
         :title="isConsoleVisible ? 'Hide console' : 'Show console'"
       >
-        <span class="mr-1">{{ isConsoleVisible ? 'Hide Console' : 'Show Console' }}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" :class="{'transform rotate-180': !isConsoleVisible}">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-        </svg>
+        <span class="status-item-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" :class="{'transform rotate-180': !isConsoleVisible}">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </span>
+        <span>{{ isConsoleVisible ? 'Hide Console' : 'Show Console' }}</span>
       </button>
     </div>
     <BottomConsole v-if="isConsoleVisible" :log-messages="logMessages" :height="consoleHeight" ref="bottomConsoleRef" />
@@ -84,7 +110,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, reactive, watch, onMounted, onBeforeUnmount, nextTick, computed } from 'vue';
 import LeftSidebar from './LeftSidebar.vue';
 import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
@@ -106,7 +132,7 @@ const logMessages = ref([]);
 const centralPanelRef = ref(null); 
 const bottomConsoleRef = ref(null);
 const consoleMinHeight = 50;
-const consoleHeight = ref(parseInt(localStorage.getItem('shotgun-console-height')) || 150); // Initial height in pixels
+const consoleHeight = ref(parseInt(localStorage.getItem('shotgun-console-height')) || 150);
 const isConsoleVisible = ref(false);
 
 function addLog(message, type = 'info', targetConsole = 'bottom') {
@@ -129,6 +155,7 @@ function addLog(message, type = 'info', targetConsole = 'bottom') {
 const projectRoot = ref('');
 const fileTree = ref([]);
 const shotgunPromptContext = ref('');
+const fileStructureContext = ref('');
 const loadingError = ref('');
 const useGitignore = ref(true);
 const useCustomIgnore = ref(true);
@@ -136,22 +163,41 @@ const manuallyToggledNodes = reactive(new Map());
 const isGeneratingContext = ref(false);
 const generationProgressData = ref({ current: 0, total: 0 });
 const isFileTreeLoading = ref(false);
-const composedLlmPrompt = ref(''); // To store the prompt from Step 2
-const platform = ref('unknown'); // To store OS platform (e.g., 'darwin', 'windows', 'linux')
+const composedLlmPrompt = ref('');
+const platform = ref('unknown');
 const userTask = ref('');
 const rulesContent = ref('');
 const finalPrompt = ref('');
 const isLoadingSplitDiffs = ref(false);
 const splitDiffs = ref([]);
 const shotgunGitDiff = ref('');
-const splitLineLimitValue = ref(0); // Add new state variable
+const splitLineLimitValue = ref(0);
 const rightSidebarWidth = ref(parseInt(localStorage.getItem('shotgun-right-sidebar-width')) || 250);
 const leftSidebarWidth = ref(parseInt(localStorage.getItem('shotgun-left-sidebar-width')) || 250);
 const isResizing = ref(false);
 const startX = ref(0);
 const startWidth = ref(0);
 const selectedTemplate = ref('dev');
+let isExcludedStateChanging = false;
 let debounceTimer = null;
+
+// Token count calculation
+const approximateTokens = computed(() => {
+  const combinedText = `${userTask.value || ''} ${finalPrompt.value || ''}`.trim();
+  const tokens = Math.round(combinedText.length / 3);
+  return tokens.toLocaleString();
+});
+
+const charCountColorClass = computed(() => {
+  const count = charCount.value;
+  if (count < 1000000) {
+    return 'text-success';
+  } else if (count <= 4000000) {
+    return 'text-warning';
+  } else {
+    return 'text-error';
+  }
+});
 
 // Watcher related
 const projectFilesChangedPendingReload = ref(false);
@@ -159,26 +205,42 @@ let unlistenProjectFilesChanged = null;
 
 async function selectProjectFolderHandler() {
   isFileTreeLoading.value = true;
-  try {
-    shotgunPromptContext.value = '';
-    isGeneratingContext.value = false;
+  try {  
     const selectedDir = await SelectDirectoryGo(); 
     if (selectedDir) {
-      projectRoot.value = selectedDir;
-      loadingError.value = '';
-      manuallyToggledNodes.clear();
-      fileTree.value = [];
-      
-      await loadFileTree(selectedDir);
-      splitDiffs.value = []; // Clear any previous splits when new project selected
+      if (selectedDir !== projectRoot.value) {
+        shotgunPromptContext.value = '';
+        fileStructureContext.value = '';
+        finalPrompt.value = '';
+        userTask.value = '';
+        isGeneratingContext.value = false;
+        generationProgressData.value = { current: 0, total: 0 };
+        
+        steps.value.forEach(step => {
+          step.completed = false;
+        });
+        
+        projectRoot.value = selectedDir;
+        loadingError.value = '';
+        manuallyToggledNodes.clear();
+        fileTree.value = [];
+        splitDiffs.value = []; 
 
-      if (!isFileTreeLoading.value && projectRoot.value) {
-         debouncedTriggerShotgunContextGeneration();
+        await loadFileTree(selectedDir);
+
+        if (!isFileTreeLoading.value) {
+           addLog('Triggering context generation for new project', 'info', 'bottom');
+           await debouncedTriggerShotgunContextGeneration();
+        }
+
+        addLog(`New project folder selected: ${selectedDir}`, 'info', 'bottom');
+      } else {
+        addLog(`Same project folder selected again: ${selectedDir}`, 'info', 'bottom');
       }
-
-      steps.value.forEach(s => s.completed = false);
-      currentStep.value = 1;
-      addLog(`Project folder selected: ${selectedDir}`, 'info', 'bottom');
+      
+      if (currentStep.value !== 1) {
+        currentStep.value = 1;
+      }
     } else {
       isFileTreeLoading.value = false;
     }
@@ -244,7 +306,7 @@ function isAnyParentVisuallyExcluded(node) {
   }
   let current = node.parent;
   while (current) {
-    if (current.excluded) { // current.excluded reflects its visual/checkbox state
+    if (current.excluded) {
       return true;
     }
     current = current.parent;
@@ -253,20 +315,19 @@ function isAnyParentVisuallyExcluded(node) {
 }
 
 function toggleExcludeNode(nodeToToggle) {
-  // If the node is under an unselected parent and is currently unselected itself (nodeToToggle.excluded is true),
-  // the first click should select it (set nodeToToggle.excluded to false).
   if (isAnyParentVisuallyExcluded(nodeToToggle) && nodeToToggle.excluded) {
     nodeToToggle.excluded = false;
   } else {
-    // Otherwise, normal toggle behavior.
     nodeToToggle.excluded = !nodeToToggle.excluded;
   }
   manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
   addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
+  
+  isExcludedStateChanging = true;
+  regenerateContextIfNeeded();
 }
 
-function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-facing function
-  // It calls the recursive helper, starting with parentIsVisuallyExcluded = false for root nodes.
+function updateAllNodesExcludedState(nodesToUpdate) {
   _updateAllNodesExcludedStateRecursive(nodesToUpdate, false);
 }
 
@@ -279,16 +340,13 @@ function _updateAllNodesExcludedStateRecursive(nodesToUpdate, parentIsVisuallyEx
     if (useCustomIgnore.value && node.isCustomIgnored) isExcludedByRule = true;
 
     if (manualToggle !== undefined) {
-      // If there's a manual toggle, it dictates the state.
       node.excluded = manualToggle;
     } else {
-      // If not manually toggled, it's excluded if a rule matches OR if its parent is visually excluded.
-      // This establishes the default inherited exclusion for visual purposes.
       node.excluded = isExcludedByRule || parentIsVisuallyExcluded;
     }
 
      if (node.children && node.children.length > 0) {
-      _updateAllNodesExcludedStateRecursive(node.children, node.excluded); // Pass current node's new visual excluded state
+      _updateAllNodesExcludedStateRecursive(node.children, node.excluded);
      }
    });
  }
@@ -299,8 +357,6 @@ function toggleGitignoreHandler(value) {
   SetUseGitignore(value)
     .then(() => addLog(`Watchman instructed to use .gitignore: ${value}`, 'debug'))
     .catch(err => addLog(`Error setting useGitignore in backend: ${err}`, 'error'));
-  // Context regeneration is handled by the watch on [fileTree, useGitignore, useCustomIgnore]
-  // which calls updateAllNodesExcludedState and debouncedTriggerShotgunContextGeneration.
 }
 
 function toggleCustomIgnoreHandler(value) {
@@ -313,13 +369,13 @@ function toggleCustomIgnoreHandler(value) {
 
 function debouncedTriggerShotgunContextGeneration() {
   if (!projectRoot.value) {
-    // Clear context and stop loading if no project root
-    shotgunPromptContext.value = ''; // Clear previous context
-    generationProgressData.value = { current: 0, total: 0 }; // Reset progress
-    // isGeneratingContext will be set to false by the return or by the timeout if it runs
+    shotgunPromptContext.value = '';
+    generationProgressData.value = { current: 0, total: 0 }; 
     isGeneratingContext.value = false;
     return;
   }
+  
+  shotgunPromptContext.value = '';
 
   if (isFileTreeLoading.value) {
     addLog("Debounced trigger skipped: file tree is loading.", 'debug', 'bottom');
@@ -344,20 +400,19 @@ function debouncedTriggerShotgunContextGeneration() {
     addLog("Debounced trigger: Requesting shotgun context generation...", 'info');
     
     updateAllNodesExcludedState(fileTree.value);
-    generationProgressData.value = { current: 0, total: 0 }; // Reset progress before new request
+    generationProgressData.value = { current: 0, total: 0 }; 
 
     const excludedPathsArray = [];
     
-    // Helper to determine if a node has any visually included (checkbox checked) descendants
     function hasVisuallyIncludedDescendant(node) {
       if (!node.isDir || !node.children || node.children.length === 0) {
         return false;
       }
       for (const child of node.children) {
-        if (!child.excluded) { // If child itself is visually included (checkbox is checked)
+        if (!child.excluded) {
           return true;
         }
-        if (hasVisuallyIncludedDescendant(child)) { // Or if any of its descendants are
+        if (hasVisuallyIncludedDescendant(child)) { 
           return true;
         }
       }
@@ -367,16 +422,9 @@ function debouncedTriggerShotgunContextGeneration() {
     function collectTrulyExcludedPaths(nodes) {
        if (!nodes) return;
        nodes.forEach(node => {
-        // A node is TRULY excluded if its checkbox is unchecked (node.excluded is true)
-        // AND it does not have any descendant that is checked (visually included).
         if (node.excluded && !hasVisuallyIncludedDescendant(node)) {
           excludedPathsArray.push(node.relPath);
-          // If a node is truly excluded, its children are implicitly excluded from generation,
-          // so no need to recurse further for collecting excluded paths under this node.
         } else {
-          // If the node is visually included OR it's visually excluded but has an included descendant
-          // (meaning this node's path needs to be in the tree structure for its descendant),
-          // then we must check its children for their own exclusion status.
           if (node.children && node.children.length > 0) {
             collectTrulyExcludedPaths(node.children);
           }
@@ -398,19 +446,50 @@ function debouncedTriggerShotgunContextGeneration() {
 }
 
 function navigateToStep(stepId) {
-  const targetStep = steps.value.find(s => s.id === stepId);
-  if (!targetStep) return;
-
-  if (targetStep.completed || stepId === currentStep.value) {
+  if (stepId < currentStep.value) {
+    steps.value.forEach(step => {
+      if (step.id > stepId && step.completed) {
+        step.completed = false;
+        addLog(`Reset step ${step.id} completion status`, 'info', 'bottom');
+      }
+    });
+    
     currentStep.value = stepId;
     return;
   }
 
+  if (stepId === 2) {
+    if (!projectRoot.value) {
+      addLog("Cannot proceed to Step 2: No project folder selected.", 'error');
+      return;
+    }
+    
+    if (!shotgunPromptContext.value) {
+      addLog("Project folder selected but context not generated. Generating context...", 'info');
+      debouncedTriggerShotgunContextGeneration();
+    }
+
+    fileStructureContext.value = shotgunPromptContext.value || '';
+  }
+
   const firstUncompletedStep = steps.value.find(s => !s.completed);
   if (!firstUncompletedStep || stepId === firstUncompletedStep.id) {
+    const previousStep = currentStep.value;
     currentStep.value = stepId;
+
+    if (stepId > previousStep) {
+      nextTick(() => {
+        if (stepId === 2 && centralPanelRef.value?.step2Ref?.checkCompletion) {
+          centralPanelRef.value.step2Ref.checkCompletion();
+        } else if (stepId === 3 && centralPanelRef.value?.step3Ref?.checkCompletion) {
+          centralPanelRef.value.step3Ref.checkCompletion();
+        } else if (stepId === 4 && centralPanelRef.value?.step4Ref?.checkCompletion) {
+          centralPanelRef.value.step4Ref.checkCompletion();
+        }
+      });
+    }
   } else {
-    addLog(`Cannot navigate to step ${stepId} yet. Please complete step ${firstUncompletedStep.id}.`, 'warn');
+    addLog(`Cannot skip to step ${stepId}. Complete step ${firstUncompletedStep.id} first.`, 'warn');
   }
 }
 
@@ -418,7 +497,6 @@ function handleComposedPromptUpdate(prompt) {
   composedLlmPrompt.value = prompt;
   finalPrompt.value = prompt;
   addLog(`MainLayout: Composed LLM prompt updated (${prompt.length} chars).`, 'debug', 'bottom');
-  // Logic to mark step 2 as complete can go here
   if (currentStep.value === 2 && prompt && steps.value[0].completed) {
     const step2 = steps.value.find(s => s.id === 2);
     if (step2 && !step2.completed) {
@@ -441,20 +519,18 @@ async function handleStepAction(actionName, payload) {
       debouncedTriggerShotgunContextGeneration();
       break;
     case 'executePrompt':
-      // For now, just navigate to Step 4, as Step 3's "execution" is conceptual.
-      // In a real app, Step 3 might display LLM output before proceeding.
       navigateToStep(4); 
       break;
-    case 'executePromptAndSplitDiff': // Handle the actual splitting action
+    case 'executePromptAndSplitDiff':
       if (!payload || !payload.gitDiff || payload.lineLimit <= 0) {
         addLog("Invalid payload for splitting diff.", 'error', 'bottom');
         return;
       }
       addLog(`Splitting diff (approx ${payload.lineLimit} lines per split)...`, 'info', 'bottom');
       isLoadingSplitDiffs.value = true;
-      splitDiffs.value = []; // Clear previous splits
+      splitDiffs.value = [];
       shotgunGitDiff.value = payload.gitDiff;
-      splitLineLimitValue.value = payload.lineLimit; // Store the line limit
+      splitLineLimitValue.value = payload.lineLimit;
       try {
         const result = await SplitShotgunDiff(payload.gitDiff, payload.lineLimit);
         splitDiffs.value = result;
@@ -487,23 +563,19 @@ async function handleStepAction(actionName, payload) {
 
 const tempConsoleHeight = ref(0);
 
-// Function to toggle console visibility
+
 function toggleConsole() {
   isConsoleVisible.value = !isConsoleVisible.value;
   
-  // If we're showing the console and it was previously collapsed to minimum height
   if (isConsoleVisible.value && consoleHeight.value <= consoleMinHeight) {
-    consoleHeight.value = 150; // Reset to a reasonable default height
+    consoleHeight.value = 150;
   }
 }
 
 function startResize(event) {
   isResizing.value = true;
   tempConsoleHeight.value = consoleHeight.value;
-  
-  // Add class to pause transitions during resize
   document.documentElement.classList.add('resize-transition-paused');
-  
   document.addEventListener('mousemove', doResize);
   document.addEventListener('mouseup', stopResize);
   event.preventDefault(); 
@@ -515,27 +587,18 @@ function doResize(event) {
   const minHeight = consoleMinHeight;
   const maxHeight = window.innerHeight * 0.7;
   
-  // Apply height directly for smoother resizing
   consoleHeight.value = Math.max(minHeight, Math.min(newHeight, maxHeight));
-  
-  // Also update the temporary height for reference
   tempConsoleHeight.value = consoleHeight.value;
 }
 
 function stopResize() {
   isResizing.value = false;
-  
-  // Remove transition pause class
   document.documentElement.classList.remove('resize-transition-paused');
-  
   document.removeEventListener('mousemove', doResize);
   document.removeEventListener('mouseup', stopResize);
-  
-  // Save the console height to localStorage for persistence
   localStorage.setItem('shotgun-console-height', consoleHeight.value);
 }
 
-// Handle sidebar resize events
 function handleLeftSidebarResize(newWidth) {
   leftSidebarWidth.value = newWidth;
   localStorage.setItem('shotgun-left-sidebar-width', newWidth);
@@ -547,9 +610,17 @@ function handleRightSidebarResize(newWidth) {
 }
 
 onMounted(() => {
+  // Load rules content from local storage if available
+  const savedRules = localStorage.getItem('shotgun-rules-content');
+  if (savedRules) {
+    rulesContent.value = savedRules;
+    addLog('Loaded custom rules from local storage', 'debug', 'bottom');
+  }
+
   EventsOn("shotgunContextGenerated", (output) => {
     addLog("Wails event: shotgunContextGenerated RECEIVED", 'debug', 'bottom');
     shotgunPromptContext.value = output;
+    fileStructureContext.value = output;
     isGeneratingContext.value = false;
     addLog(`Shotgun context updated (${output.length} chars).`, 'success');
     const step1 = steps.value.find(s => s.id === 1);
@@ -559,7 +630,7 @@ onMounted(() => {
     if (currentStep.value === 1 && centralPanelRef.value?.updateStep2ShotgunContext) {
         centralPanelRef.value.updateStep2ShotgunContext(output);
     }
-    checkAndProcessPendingFileTreeReload(); // Check after context generation
+    checkAndProcessPendingFileTreeReload();
   });
 
   EventsOn("shotgunContextError", (errorMsg) => {
@@ -567,15 +638,13 @@ onMounted(() => {
     shotgunPromptContext.value = "Error: " + errorMsg;
     isGeneratingContext.value = false;
     addLog(`Error generating context: ${errorMsg}`, 'error');
-    checkAndProcessPendingFileTreeReload(); // Check after context generation error
+    checkAndProcessPendingFileTreeReload();
   });
 
   EventsOn("shotgunContextGenerationProgress", (progress) => {
-    // console.log("FE: Progress event:", progress); // For debugging in Browser console
     generationProgressData.value = progress;
   });
 
-  // Get platform information
   (async () => {
     try {
       const envInfo = await Environment();
@@ -583,7 +652,6 @@ onMounted(() => {
       addLog(`Platform detected: ${platform.value}`, 'debug');
     } catch (err) {
       addLog(`Error getting platform: ${err}`, 'error');
-      // platform.value remains 'unknown' as fallback
     }
   })();
 
@@ -618,16 +686,28 @@ onBeforeUnmount(async () => {
   // Remember to unlisten other events if they return unlistener functions
 });
 
-watch([fileTree, useGitignore, useCustomIgnore], ([newFileTree, newUseGitignore, newUseCustomIgnore], [oldFileTree, oldUseGitignore, oldUseCustomIgnore]) => {
-  if (isFileTreeLoading.value) {
-    addLog("Watcher triggered during file tree load, generation deferred.", 'debug', 'bottom');
+// Watch for checkbox/exclusion changes
+function regenerateContextIfNeeded() {
+  if (isFileTreeLoading.value || !isExcludedStateChanging) {
     return;
   }
   
-  addLog("Watcher detected changes in fileTree, useGitignore, or useCustomIgnore. Re-evaluating context.", 'debug', 'bottom');
+  addLog("Regenerating context due to exclusion changes", 'debug', 'bottom');
+  isExcludedStateChanging = false;
+  debouncedTriggerShotgunContextGeneration();
+}
+
+// Watch for gitignore and custom ignore changes
+watch([useGitignore, useCustomIgnore], ([newUseGitignore, newUseCustomIgnore], [oldUseGitignore, oldUseCustomIgnore]) => {
+  if (isFileTreeLoading.value) {
+    addLog("Ignore settings changed during file tree load, generation deferred.", 'debug', 'bottom');
+    return;
+  }
+  
+  addLog("Watcher detected changes in useGitignore or useCustomIgnore. Re-evaluating context.", 'debug', 'bottom');
   updateAllNodesExcludedState(fileTree.value);
   debouncedTriggerShotgunContextGeneration();
-}, { deep: true });
+});
 
 watch(projectRoot, async (newRoot, oldRoot) => {
   if (oldRoot) {
@@ -678,6 +758,7 @@ function handleUserTaskUpdate(val) {
 
 function handleRulesContentUpdate(val) {
   rulesContent.value = val;
+  localStorage.setItem('shotgun-rules-content', val);
 }
 
 function handleShotgunGitDiffUpdate(val) {
@@ -689,12 +770,8 @@ function handleSplitLineLimitUpdate(val) {
 }
 
 function handleTemplateChange(templateKey) {
-  // Update the selected template
   selectedTemplate.value = templateKey;
-  
-  // Trigger prompt update
   if (currentStep.value === 2) {
-    // If we're on step 2, trigger the prompt update
     debouncedTriggerShotgunContextGeneration();
   }
   
@@ -702,22 +779,17 @@ function handleTemplateChange(templateKey) {
 }
 
 function toggleSettings() {
-  // Handle settings toggle
   addLog('Settings toggled', 'info', 'bottom');
-  // Implement settings functionality here
 }
 
 function handleStepCompletion(stepId) {
-  // Mark the step as completed
   const step = steps.value.find(s => s.id === stepId);
   if (step) {
     step.completed = true;
     addLog(`Step ${stepId} marked as completed`, 'info');
     
-    // If we're currently on this step, navigate to the next step
     if (currentStep.value === stepId) {
       const nextStepId = stepId + 1;
-      // Only navigate if the next step exists
       const nextStep = steps.value.find(s => s.id === nextStepId);
       if (nextStep) {
         navigateToStep(nextStepId);

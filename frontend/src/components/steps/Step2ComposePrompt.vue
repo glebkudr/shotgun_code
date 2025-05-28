@@ -1,5 +1,5 @@
 <template>
-  <div class="content-container max-w-4xl mx-auto p-4">
+  <div class="content-container mx-auto p-4">
     <p class="text-secondary text-center mb-4">
       Write the task for the LLM and review the generated prompt
     </p>
@@ -29,8 +29,7 @@
         <textarea
           id="user-task-ai"
           v-model="localUserTask"
-          rows="6"
-          class="input-textarea resize-none mb-2"
+          class="input-textarea mb-2"
           placeholder="Describe what the AI should do..."
         ></textarea>
       </div>
@@ -57,8 +56,7 @@
           v-else
           :value="props.finalPrompt"
           @input="e => emit('update:finalPrompt', e.target.value)"
-          rows="15"
-          class="input-textarea flex-grow"
+          class="input-textarea"
           placeholder="The final prompt will be generated here..."
         ></textarea>
         
@@ -89,7 +87,11 @@ const props = defineProps({
     type: String,
     default: ''
   },
-  platform: { // To know if we are on macOS
+  fileStructureContext: {
+    type: String,
+    default: ''
+  },
+  platform: {
     type: String,
     default: 'unknown'
   },
@@ -121,6 +123,18 @@ const templateContents = {
 watch(() => props.selectedTemplate, () => {
   updateFinalPrompt();
 });
+watch(() => props.fileListContext, () => {
+  updateFinalPrompt();
+});
+watch(() => props.fileStructureContext, () => {
+  updateFinalPrompt();
+});
+watch(() => props.rulesContent, () => {
+  updateFinalPrompt();
+});
+watch(() => props.userTask, () => {
+  updateFinalPrompt();
+});
 
 const emit = defineEmits(['update:finalPrompt', 'update:userTask', 'update:rulesContent']);
 
@@ -141,22 +155,6 @@ const charCount = computed(() => {
   return (props.finalPrompt || '').length;
 });
 
-const approximateTokens = computed(() => {
-  const tokens = Math.round(charCount.value / 3);
-  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-});
-
-const charCountColorClass = computed(() => {
-  const count = charCount.value;
-  if (count < 1000000) {
-    return 'text-success';
-  } else if (count <= 4000000) {
-    return 'text-warning';
-  } else {
-    return 'text-error';
-  }
-});
-
 const tooltipText = computed(() => {
   if (isLoadingFinalPrompt.value) return 'Calculating...';
   
@@ -165,12 +163,14 @@ const tooltipText = computed(() => {
   return `Your text contains ${count} symbols which is roughly equivalent to ${tokens} tokens`;
 });
 
+let isUpdateInProgress = false;
+const MIN_LOADING_DISPLAY_TIME = 500;
 const DEFAULT_RULES = `no additional rules`;
+const DEBOUNCE_DELAY = 1000;
 
 onMounted(async () => {
   try {
     localUserTask.value = props.userTask;
-    // Load rules from the backend only on the first mount
     if (isFirstMount.value) {
       const fetchedRules = await GetCustomPromptRules();
       if (!props.rulesContent) {
@@ -192,45 +192,57 @@ onMounted(async () => {
   }
 });
 
-async function updateFinalPrompt() {
-  if (isFirstMount.value) {
+async function updateFinalPrompt(forceUpdate = false) {
+  if (isFirstMount.value && !forceUpdate) {
     isFirstMount.value = false;
     return;
   }
-
+  if (isUpdateInProgress && !forceUpdate) return;
+  
+  isUpdateInProgress = true;
   isLoadingFinalPrompt.value = true;
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  // Get the current template content based on the selected template
+  const startTime = Date.now();
+  emit('update:finalPrompt', '');
+  
   const currentTemplateContent = templateContents[props.selectedTemplate] || templateContents.dev;
   let populatedPrompt = currentTemplateContent;
   
-  // Replace placeholders with actual content
   populatedPrompt = populatedPrompt.replace('{TASK}', props.userTask || "No task provided by the user.");
   populatedPrompt = populatedPrompt.replace('{RULES}', props.rulesContent);
   populatedPrompt = populatedPrompt.replace('{FILE_LIST}', props.fileListContext);
+  populatedPrompt = populatedPrompt.replace('{FILE_STRUCTURE}', props.fileStructureContext || props.fileListContext);
 
   emit('update:finalPrompt', populatedPrompt);
+  
+  const elapsedTime = Date.now() - startTime;
+  
+  if (elapsedTime < MIN_LOADING_DISPLAY_TIME) {
+    await new Promise(resolve => setTimeout(resolve, MIN_LOADING_DISPLAY_TIME - elapsedTime));
+  }
+  
   isLoadingFinalPrompt.value = false;
+  isUpdateInProgress = false;
 }
 
 function debouncedUpdateFinalPrompt() {
+  if (isUpdateInProgress) return;
+  
   clearTimeout(finalPromptDebounceTimer);
   finalPromptDebounceTimer = setTimeout(() => {
     updateFinalPrompt();
-  }, 750);
+  }, DEBOUNCE_DELAY);
 }
 
-watch(() => props.userTask, (newValue) => {
-  if (newValue !== localUserTask.value) {
-    localUserTask.value = newValue;
-  }
-  debouncedUpdateFinalPrompt();
-});
-
-watch(() => props.selectedTemplate, () => {
-  debouncedUpdateFinalPrompt();
-});
+watch(
+  [() => props.userTask, () => props.selectedTemplate, () => props.fileListContext, () => props.fileStructureContext, () => props.rulesContent],
+  ([newUserTask]) => {
+    if (newUserTask !== localUserTask.value) {
+      localUserTask.value = newUserTask;
+    }
+    debouncedUpdateFinalPrompt();
+  },
+  { deep: true }
+);
 
 watch(localUserTask, (currentValue) => {
   clearTimeout(userTaskInputDebounceTimer);
@@ -238,12 +250,8 @@ watch(localUserTask, (currentValue) => {
     if (currentValue !== props.userTask) {
       emit('update:userTask', currentValue);
     }
-  }, 300);
+  }, 500);
 });
-
-watch([() => props.userTask, () => props.rulesContent, () => props.fileListContext], () => {
-  debouncedUpdateFinalPrompt();
-}, { deep: true });
 
 async function copyFinalPromptToClipboard() {
   if (!props.finalPrompt) return;
@@ -293,5 +301,20 @@ function handleCancelPromptRules() {
   isPromptRulesModalVisible.value = false;
 }
 
-defineExpose({});
+function forceUpdatePrompt() {
+  updateFinalPrompt(true);
+}
+
+function checkCompletion() {
+  const userTaskHasContent = props.userTask?.trim().length > 0;
+  const finalPromptHasContent = props.finalPrompt?.trim().length > 0;
+  const isDefaultPrompt = props.finalPrompt?.includes("No task provided by the user.");
+  
+  return userTaskHasContent && finalPromptHasContent && !isDefaultPrompt;
+}
+
+defineExpose({
+  forceUpdatePrompt,
+  checkCompletion
+});
 </script>

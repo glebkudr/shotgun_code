@@ -8,19 +8,22 @@
     @save="handleSaveCustomRules"
     @cancel="handleCancelCustomRules"
   />
-  <aside class="sidebar-container right-sidebar relative" :style="{ width: width + 'px' }">
-          <!-- Collapse Controls -->
-      <div class="flex justify-end mb-2">
-        <button @click="expandAllSections()" class="btn-sm mr-2" title="Expand all sections">
-          <span class="text-xs">Expand All</span>
-        </button>
-        <button @click="collapseAllSections()" class="btn-sm" title="Collapse all sections">
-          <span class="text-xs">Collapse All</span>
-        </button>
-      </div>
-      
+  <aside class="sidebar-container right-sidebar" :style="{ width: width + 'px' }">
+
     <div class="resize-handle right" @mousedown="startResize"></div>
-    <div v-if="currentStep === 1" class="h-full flex flex-col p-4">
+
+    <div class="flex justify-end mb-2 px-4 pt-4">
+      <button @click="expandAllSections()" class="btn-sm mr-2" title="Expand all sections">
+        <span class="text-xs">Expand All</span>
+      </button>
+      <button @click="collapseAllSections()" class="btn-sm" title="Collapse all sections">
+        <span class="text-xs">Collapse All</span>
+      </button>
+    </div>
+    
+    <div class="section-wrapper overflow-auto" style="height: calc(100% - 40px);">
+    
+    <div v-if="currentStep === 1" class="flex flex-col p-4">
       <!-- Step 1: Project Selection -->
       <!-- Project Selection Section (not collapsible) -->
       <div class="section mb-4">
@@ -86,7 +89,7 @@
           <h2 class="text-subtitle">Project Files</h2>
           <span class="section-toggle">{{ sectionStates.projectFiles ? '▼' : '▶' }}</span>
         </div>
-        <div v-if="sectionStates.projectFiles" class="section-content file-tree-container overflow-auto">
+        <div v-if="sectionStates.projectFiles" class="section-content file-tree-container overflow-auto" style="min-height: 300px;">
           <div v-if="loadingError" class="text-error p-2">
             {{ loadingError }}
           </div>
@@ -148,7 +151,7 @@
           <h2 class="text-subtitle">Project Files</h2>
           <span class="section-toggle">{{ sectionStates.promptFileTree ? '▼' : '▶' }}</span>
         </div>
-        <div v-if="sectionStates.promptFileTree" class="section-content file-tree-container overflow-auto" style="max-height: 200px;">
+        <div v-if="sectionStates.promptFileTree" class="section-content file-tree-container overflow-auto" style="min-height: 300px;">
           <div v-if="loadingError" class="text-error p-2">
             {{ loadingError }}
           </div>
@@ -182,34 +185,13 @@
             >⚙️</button>
           </div>
           <textarea
-            :value="localRulesContent"
+            v-model="localRulesContent"
             rows="5"
             class="input-textarea resize-none text-sm w-full"
             style="max-height: 120px;"
             placeholder="Rules for AI..."
-            @input="$emit('update:rules-content', localRulesContent)"
+            @input="$emit('update:rules-content', $event.target.value)"
           ></textarea>
-        </div>
-      </div>
-      
-      <!-- Token Counter Section -->
-      <div class="section">
-        <div class="section-header" @click="toggleSection('tokenCounter')">
-          <h2 class="text-subtitle">Token Count</h2>
-          <span class="section-toggle">{{ sectionStates.tokenCounter ? '▼' : '▶' }}</span>
-        </div>
-        <div v-if="sectionStates.tokenCounter" class="section-content">
-          <div class="token-counter w-full">
-            <span
-              v-show="!isLoadingFinalPrompt"
-              :class="['text-body font-medium', charCountColorClass]"
-              :title="tooltipText">
-              <span class="font-normal">Token:</span> {{ approximateTokens }}
-            </span>
-            <div class="mt-1 text-xs text-hint">
-              This is an approximation based on the current prompt.
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -363,6 +345,8 @@
         </div>
       </div>
     </div>
+    
+    </div> <!-- End of section-wrapper -->
   </aside>
 </template>
 
@@ -408,9 +392,6 @@ const props = defineProps({
   selectedTemplate: { type: String, default: 'dev' }
 });
 
-// Removed duplicate emit declaration
-
-// Template selection
 const promptTemplates = {
   dev: { 
     name: 'Development', 
@@ -438,50 +419,63 @@ const dropdownRef = ref(null);
 const modelDropdownRef = ref(null);
 const patchFormatDropdownRef = ref(null);
 
-// Section collapsible states
-const sectionStates = ref({
-  projectSelection: true,
-  ignoreRules: true,
-  projectFiles: true,
-  templateSelection: true,
-  promptFileTree: true,
-  customRules: true,
-  tokenCounter: true,
-  modelSelection: true,
-  temperature: true,
-  advancedOptions: true,
-  patchFormat: true,
-  contextOptions: true,
-  applyOptions: true
-});
+const loadSavedSectionStates = () => {
+  const savedStates = localStorage.getItem('shotgun-sidebar-section-states');
+  if (savedStates) {
+    try {
+      return JSON.parse(savedStates);
+    } catch (e) {
+      console.error('Failed to parse saved section states:', e);
+    }
+  }
+  return {
+    projectSelection: true,
+    ignoreRules: true,
+    projectFiles: true,
+    templateSelection: true,
+    promptFileTree: true,
+    customRules: true,
 
-// Toggle section visibility
+    modelSelection: true,
+    temperature: true,
+    advancedOptions: true,
+    patchFormat: true,
+    contextOptions: true,
+    applyOptions: true
+  };
+};
+
+const sectionStates = ref(loadSavedSectionStates());
+
+const saveSectionStates = () => {
+  localStorage.setItem('shotgun-sidebar-section-states', JSON.stringify(sectionStates.value));
+};
+
 function toggleSection(sectionName) {
   sectionStates.value[sectionName] = !sectionStates.value[sectionName];
+  saveSectionStates();
 }
 
-// Expand all sections
 function expandAllSections() {
   Object.keys(sectionStates.value).forEach(key => {
     sectionStates.value[key] = true;
   });
+  saveSectionStates();
 }
 
-// Collapse all sections
 function collapseAllSections() {
   Object.keys(sectionStates.value).forEach(key => {
-    sectionStates.value[key] = true; // Keep projectSelection expanded
+    sectionStates.value[key] = true;
     if (key !== 'projectSelection') {
       sectionStates.value[key] = false;
     }
   });
+  saveSectionStates();
 }
 
-// Model options
 const modelOptions = ['GPT-4', 'GPT-3.5 Turbo', 'Claude 3'];
 const selectedModel = ref('GPT-4');
 
-// Patch format options
 const patchFormatOptions = [
   { value: 'unified', label: 'Unified Diff' },
   { value: 'git', label: 'Git Format' },
@@ -489,14 +483,12 @@ const patchFormatOptions = [
 ];
 const selectedPatchFormat = ref('Unified Diff');
 
-// Watch for prop changes
 watch(() => props.selectedTemplate, (newVal) => {
   if (newVal !== selectedPromptTemplate.value) {
     selectedPromptTemplate.value = newVal;
   }
 }, { immediate: true });
 
-// Template selection functions
 function toggleDropdown() {
   isDropdownOpen.value = !isDropdownOpen.value;
   isModelDropdownOpen.value = false;
@@ -577,20 +569,14 @@ watch(() => props.projectRoot, (newValue) => {
   }
 });
 
-// Token count calculation
-const approximateTokens = computed(() => {
-  const tokens = Math.round((props.finalPrompt || '').length / 3);
-  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-});
+
 
 function openCustomRulesModal(type) {
   if (type === 'prompt') {
     modalTitle.value = 'Edit Custom Prompt Rules';
     modalRuleType.value = 'prompt';
-    GetCustomPromptRules().then(rules => {
-      currentCustomRulesForModal.value = rules;
-      isCustomRulesModalVisible.value = true;
-    });
+    currentCustomRulesForModal.value = localRulesContent.value;
+    isCustomRulesModalVisible.value = true;
   } else {
     modalTitle.value = 'Edit Custom Ignore Rules';
     modalRuleType.value = 'ignore';
@@ -604,6 +590,13 @@ function openCustomRulesModal(type) {
 function handleSaveCustomRules(newRules) {
   if (modalRuleType.value === 'prompt') {
     SetCustomPromptRules(newRules).then(() => {
+      // Update local rules content
+      localRulesContent.value = newRules;
+      
+      // Update parent component rules content
+      emit('update:rules-content', newRules);
+      
+      // Close modal and notify about the update
       isCustomRulesModalVisible.value = false;
       emit('custom-rules-updated');
     });
@@ -667,8 +660,7 @@ const handleSelectFolder = () => {
   if (isSelecting.value) return;
   
   isSelecting.value = true;
-  console.log('Emitting select-folder event');
-  
+    
   emit('select-folder');
   setTimeout(() => {
     isSelecting.value = false;

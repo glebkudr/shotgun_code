@@ -20,7 +20,7 @@
     </div>
 
     <div class="section-container mb-4">
-      <label for="shotgun-git-diff-input" class="section-label">Git Diff Output:</label>
+      <div class="section-header">Git Diff Output:</div>
       <textarea
         id="shotgun-git-diff-input"
         v-model="localShotgunGitDiffInput"
@@ -31,7 +31,7 @@
     </div>
 
     <div class="section-container mb-4">
-      <label for="split-line-limit" class="section-label">Approx. Lines per Split:</label>
+      <div class="section-header">Approx. Lines per Split:</div>
       <p class="text-hint mb-3">
         ⓘ This will attempt to split the diff into the specified number of lines, while keeping the original structure and the hunks.
         The exact number of lines per split is not guaranteed, but the diff will be split into as many parts as possible.
@@ -197,4 +197,13 @@ const resetSplitLineLimit = () => {
     localSplitLineLimit.value = 500;
   }
 }
+
+// Simplified to just return validation status since step completion is now handled by CentralPanel
+function checkCompletion() {
+  return localShotgunGitDiffInput.value && localShotgunGitDiffInput.value.trim() !== '';
+}
+
+defineExpose({
+  checkCompletion
+});
 </script> 

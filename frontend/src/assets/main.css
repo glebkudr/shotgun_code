@@ -30,7 +30,7 @@
   --button-secondary-hover: #e2e8f0;
   
   --input-bg: #ffffff;
-  --input-border: #d1d5db;
+  --input-border: #dbddde;
   --input-focus: #3b82f6;
   
   --hover-overlay: rgba(59, 130, 246, 0.05);
@@ -48,14 +48,14 @@
 .dark {
   --surface-1: #0f172a;
   --surface-2: #1e293b;
-  --surface-3: #26344b;
+  --surface-3: #212e42;
   --surface-elevated: #1e293b;
   --surface-error: rgba(239, 68, 68, 0.15);
 
   --text-primary: #f8fafc;
   --text-secondary: #cbd5e1;
   --text-tertiary: #94a3b8;
-  --text-hint: #64748b;
+  --text-hint: #5c6a7e;
   --text-error: #f87171;
   
   --border-primary: #334155;
@@ -76,10 +76,9 @@
   --scrollbar-thumb: #475569;
   --scrollbar-thumb-hover: #64748b;
   
-  /* Enhanced dark mode effects */
-  --glow-primary: 0 0 20px rgba(59, 130, 246, 0.4);
-  --glow-subtle: 0 0 10px rgba(59, 130, 246, 0.15);
-  --shadow-elevation: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --glow-primary: 0 0 25px rgba(59, 130, 246, 0.5);
+  --glow-subtle: 0 0 15px rgba(59, 130, 246, 0.2);
+  --shadow-elevation: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
 }
 
 /* ============================================================================
@@ -574,20 +573,21 @@ body, html {
    ENHANCED CONTAINER SYSTEM
    ============================================================================ */
 
-  .central-panel {
+
+.central-panel {
   flex: 1;
   overflow-y: auto;
   background-color: var(--surface-1);
   color: var(--text-primary);
-  transition: background-color 0.2s ease-out;
-  padding: 1.5rem;
+  margin-bottom: 1rem;
   position: relative;
   min-height: 100%;
   box-sizing: border-box;
 }
 
-.central-panel :deep(*) {
-  color: inherit;
+.central-panel .content-wrapper {
+  padding-bottom: 3rem;
+  min-height: 100%;
 }
 
 .sidebar-container {
@@ -596,12 +596,13 @@ body, html {
   width: 14rem;
   background-color: var(--surface-1);
   height: 100%;
-  overflow-y: auto;
-  padding: 1rem;
+  overflow: hidden;
   border-right: 1px solid var(--border-primary);
-  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-container.left-sidebar {
@@ -611,6 +612,15 @@ body, html {
 .sidebar-container.right-sidebar {
   border-left: 1px solid var(--border-primary);
   border-right: none;
+}
+
+.section-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  position: relative;
+  padding: 0;
 }
 
 .content-container {
@@ -644,7 +654,6 @@ body, html {
   color: var(--text-primary);
   overflow: auto;
   max-height: 50vh;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============================================================================
@@ -820,7 +829,7 @@ body, html {
 
 .step-button-current {
   background: rgba(59, 130, 246, 0.1);
-  color: var(--button-primary);
+  color: var(--text-secondary);
   font-weight: 600;
   box-shadow: inset 0 1px 2px 0 rgba(59, 130, 246, 0.1);
 }
@@ -955,7 +964,6 @@ body, html {
   padding: 1rem;
   font-size: 0.75rem;
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  border-radius: 0.5rem;
   box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.3);
 }
 
@@ -1053,17 +1061,12 @@ body, html {
    ============================================================================ */
 
 .token-counter {
-  padding: 0.375rem 0.75rem;
-  border-radius: 0.5rem;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05));
+  margin: 0.375rem;
+  padding: 0.375rem;
   font-size: 0.75rem;
-  margin-bottom: 0.5rem;
-  color: var(--button-primary);
+  color: var(--text-primary);
   display: inline-block;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  box-shadow: inset 0 1px 2px 0 rgba(59, 130, 246, 0.05);
-}
+ }
 
 .shadow-sm {
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -1218,10 +1221,10 @@ body, html {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, var(--surface-elevated), var(--surface-1));
+  background: var(--surface-elevated);
   border-bottom: 1px solid var(--border-primary);
   height: 4rem;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px);
   box-shadow: var(--shadow-elevation);
 }
 
@@ -1353,6 +1356,64 @@ body, html {
 }
 
 /* ============================================================================
+   STATUS BAR STYLING
+   ============================================================================ */
+
+.status-bar {
+  background-color: var(--surface-2);
+  border-top: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.03);
+  transition: background-color 0.2s ease;
+}
+
+.dark .status-bar {
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.status-bar .status-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  height: 100%;
+  border-right: 1px solid var(--border-primary);
+}
+
+.status-bar .status-item:last-child {
+  border-right: none;
+}
+
+.status-bar .status-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+
+.status-bar .status-item-success {
+  color: #10b981; /* emerald-500 */
+}
+
+.status-bar .status-item-warning {
+  color: #f59e0b; /* amber-500 */
+}
+
+.status-bar .status-item-error {
+  color: var(--text-error);
+}
+
+.status-bar .status-item-loading {
+  color: var(--button-primary);
+  animation: pulse 2s infinite;
+}
+
+/* ============================================================================
    ENHANCED ANIMATIONS
    ============================================================================ */
 
@@ -1403,10 +1464,6 @@ body, html {
 
 @media (min-width: 768px) {
 
-  .central-panel {
-    padding: 1rem;
-  }
-  
   .sidebar-container {
     width: 18rem;
   }
@@ -1472,16 +1529,8 @@ body, html {
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-bottom: 1rem;
   box-shadow: var(--shadow-elevation);
   flex: 1;
-  min-height: 250px;
-}
-
-.section-container:hover {
-  box-shadow: var(--shadow-elevation), var(--glow-subtle);
-  transform: translateY(-1px);
 }
 
 .section-header {

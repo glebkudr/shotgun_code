@@ -1,10 +1,11 @@
 <template>
-  <aside class="sidebar-container left-sidebar flex flex-col h-full relative" :style="{ width: width + 'px' }">
+  <aside class="sidebar-container left-sidebar" :style="{ width: width + 'px' }">
     <div class="resize-handle left" @mousedown="startResize"></div>
-    <!-- Step Navigation -->
-    <div class="flex-grow">
-      <h2 class="text-subtitle mb-4">Steps</h2>
-      <div class="space-y-2">
+    
+    <div class="section-wrapper overflow-auto" style="height: 100%;">
+      <div class="p-4">
+        <h2 class="text-subtitle mb-4">Steps</h2>
+        <div class="space-y-2">
         <button 
           v-for="step in steps" :key="step.id"
           @click="canNavigateToStep(step.id) ? $emit('navigate', step.id) : null"
@@ -21,6 +22,7 @@
             <span>{{ step.title }}</span>
           </div>
         </button>
+        </div>
       </div>
     </div>
   </aside>

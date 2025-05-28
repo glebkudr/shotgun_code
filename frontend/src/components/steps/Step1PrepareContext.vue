@@ -1,5 +1,5 @@
 <template>
-  <div class="content-container max-w-4xl mx-auto p-4 h-full flex flex-col">
+  <div class="content-container mx-auto p-4 h-full flex flex-col">
     <!-- Loading State: Progress Bar -->
     <div v-if="isLoadingContext" class="flex-grow flex justify-center items-center p-4">
       <div class="text-center w-full max-w-sm">
@@ -30,7 +30,7 @@
         <textarea
           :value="generatedContext"
           readonly
-          class="input-textarea flex-grow"
+          class="input-textarea"
           placeholder="Context will appear here. If empty, ensure files are selected and not all excluded."
         ></textarea>
       </div>
@@ -59,8 +59,10 @@
 </template>
 
 <script setup>
-import { defineProps, ref, computed } from 'vue';
+import { defineProps, defineEmits, ref, computed } from 'vue';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
+
+const emit = defineEmits([]);
 
 const props = defineProps({
   generatedContext: {
@@ -118,4 +120,12 @@ async function copyGeneratedContextToClipboard() {
     }, 2000);
   }
 }
+
+function checkCompletion() {
+  return props.generatedContext && !props.isLoadingContext;
+}
+
+defineExpose({
+  checkCompletion
+});
 </script>
