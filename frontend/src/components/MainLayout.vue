@@ -667,15 +667,19 @@ function handleWindowResize() {
   }, 100);
 }
 
-// Handle keyboard navigation for steps 1-4
 function handleKeyNavigation(event) {
-  // Only process number keys 1-4
   if (event.key >= '1' && event.key <= '4') {
     const stepId = parseInt(event.key);
-    // Check if we can navigate to this step
     const step = steps.value.find(s => s.id === stepId);
     if (step && (stepId === currentStep.value || stepId === 2 || stepId === 3 || stepId === 4 || (step && step.completed))) {
       navigateToStep(stepId);
+    }
+  }
+  if (event.key === 'ArrowDown') {
+    navigateToStep(currentStep.value + 1);
+  } else if (event.key === 'ArrowUp') {
+    if (currentStep.value > 1) {
+      navigateToStep(currentStep.value - 1);
     }
   }
 }
