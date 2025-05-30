@@ -1,7 +1,7 @@
 <template>
   <ul class="file-tree">
     <li v-for="node in nodes" :key="node.path" :class="{ 'excluded-node': node.excluded }">
-      <div class="node-item" :style="{ 'padding-left': depth * 20 + 'px' }">
+      <div class="node-item" :style="{ 'padding-left': depth * 10 + 'px' }">
         <span v-if="node.isDir" @click="toggleExpand(node)" class="toggler">
           {{ node.expanded ? '▼' : '▶' }}
         </span>

@@ -12,11 +12,13 @@
 
     <div class="resize-handle right" @mousedown="startResize"></div>
 
-    <div class="flex justify-end mb-2 px-4 pt-4">
+    <div class="flex justify-end mb-2 px-4 pt-2">
       <button @click="expandAllSections()" class="btn-sm mr-2" title="Expand all sections">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
         <span class="text-xs">Expand All</span>
       </button>
       <button @click="collapseAllSections()" class="btn-sm" title="Collapse all sections">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><polyline points="7 11 12 6 17 11"></polyline><polyline points="7 18 12 13 17 18"></polyline></svg>
         <span class="text-xs">Collapse All</span>
       </button>
     </div>
@@ -26,7 +28,7 @@
     <div v-if="currentStep === 1" class="flex flex-col p-4">
       <!-- Step 1: Project Selection -->
       <!-- Project Selection Section (not collapsible) -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header non-collapsible">
           <h2 class="text-subtitle">Project Selection</h2>
         </div>
@@ -43,7 +45,7 @@
         </div>      </div>
       
       <!-- Ignore Rules Section - Always visible and collapsible -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('ignoreRules')">
           <h2 class="text-subtitle">Ignore Rules</h2>
           <span class="section-toggle">{{ sectionStates.ignoreRules ? '▼' : '▶' }}</span>
@@ -112,7 +114,7 @@
       <!-- Step 2: Prompt Properties -->
       
       <!-- Template Selection Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('templateSelection')">
           <h2 class="text-subtitle">Template Selection</h2>
           <span class="section-toggle">{{ sectionStates.templateSelection ? '▼' : '▶' }}</span>
@@ -146,7 +148,7 @@
       </div>
       
       <!-- File Tree Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('promptFileTree')">
           <h2 class="text-subtitle">Project Files</h2>
           <span class="section-toggle">{{ sectionStates.promptFileTree ? '▼' : '▶' }}</span>
@@ -170,7 +172,7 @@
       </div>
       
       <!-- Custom Rules Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('customRules')">
           <h2 class="text-subtitle">Custom Rules</h2>
           <span class="section-toggle">{{ sectionStates.customRules ? '▼' : '▶' }}</span>
@@ -200,7 +202,7 @@
       <!-- Step 3: Execution Properties -->
       
       <!-- Model Selection Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('modelSelection')">
           <h2 class="text-subtitle">Model Selection</h2>
           <span class="section-toggle">{{ sectionStates.modelSelection ? '▼' : '▶' }}</span>
@@ -234,7 +236,7 @@
       </div>
       
       <!-- Temperature Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('temperature')">
           <h2 class="text-subtitle">Temperature</h2>
           <span class="section-toggle">{{ sectionStates.temperature ? '▼' : '▶' }}</span>
@@ -258,7 +260,7 @@
       </div>
       
       <!-- Advanced Options Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('advancedOptions')">
           <h2 class="text-subtitle">Advanced Options</h2>
           <span class="section-toggle">{{ sectionStates.advancedOptions ? '▼' : '▶' }}</span>
@@ -280,7 +282,7 @@
       <!-- Step 4: Patch Properties -->
       
       <!-- Patch Format Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('patchFormat')">
           <h2 class="text-subtitle">Patch Format</h2>
           <span class="section-toggle">{{ sectionStates.patchFormat ? '▼' : '▶' }}</span>
@@ -314,7 +316,7 @@
       </div>
       
       <!-- Context Options Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('contextOptions')">
           <h2 class="text-subtitle">Context Options</h2>
           <span class="section-toggle">{{ sectionStates.contextOptions ? '▼' : '▶' }}</span>
@@ -328,7 +330,7 @@
       </div>
       
       <!-- Apply Options Section -->
-      <div class="section mb-4">
+      <div class="section mt-2">
         <div class="section-header" @click="toggleSection('applyOptions')">
           <h2 class="text-subtitle">Apply Options</h2>
           <span class="section-toggle">{{ sectionStates.applyOptions ? '▼' : '▶' }}</span>
@@ -590,13 +592,8 @@ function openCustomRulesModal(type) {
 function handleSaveCustomRules(newRules) {
   if (modalRuleType.value === 'prompt') {
     SetCustomPromptRules(newRules).then(() => {
-      // Update local rules content
       localRulesContent.value = newRules;
-      
-      // Update parent component rules content
       emit('update:rules-content', newRules);
-      
-      // Close modal and notify about the update
       isCustomRulesModalVisible.value = false;
       emit('custom-rules-updated');
     });
@@ -617,14 +614,30 @@ const isResizing = ref(false);
 const startX = ref(0);
 const startWidth = ref(0);
 
+const enforceWidth = () => {
+  const minWidth = 220;
+  const maxWidth = window.innerWidth * 0.5;
+  
+  if (props.width < minWidth) {
+    emit('resize', minWidth);
+  } else if (props.width > maxWidth) {
+    emit('resize', maxWidth);
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('resize', enforceWidth);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', enforceWidth);
+});
+
 function startResize(event) {
   isResizing.value = true;
   startX.value = event.clientX;
   startWidth.value = props.width;
-  
-  // Add class to pause transitions during resize
   document.documentElement.classList.add('resize-transition-paused');
-  
   document.addEventListener('mousemove', doResize);
   document.addEventListener('mouseup', stopResize);
   event.preventDefault();
@@ -636,8 +649,8 @@ function doResize(event) {
   const dx = startX.value - event.clientX;
   const newWidth = startWidth.value + dx;
   
-  const minWidth = 180;
-  const maxWidth = window.innerWidth * 0.4; 
+  const minWidth = 220;
+  const maxWidth = window.innerWidth * 0.5; 
   
   if (newWidth >= minWidth && newWidth <= maxWidth) {
     emit('resize', newWidth);
@@ -646,10 +659,7 @@ function doResize(event) {
 
 function stopResize() {
   isResizing.value = false;
-  
-  // Remove transition pause class
   document.documentElement.classList.remove('resize-transition-paused');
-  
   document.removeEventListener('mousemove', doResize);
   document.removeEventListener('mouseup', stopResize);
 }

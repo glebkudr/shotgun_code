@@ -1,7 +1,23 @@
 <template>
   <div class="top-bar">
     <div class="app-name">
-      <h1>Shotgun Code</h1>
+      <div class="flex items-center">
+        <div class="sidebar-toggle-container mr-3" @click="toggleLeftSidebar" :title="getSidebarToggleTitle">
+          <div class="sidebar-toggle-icon" :class="`state-${leftSidebarState}`">
+            <div class="sidebar-toggle-bars">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="sidebar-toggle-arrow">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <h1>Shotgun Code</h1>
+      </div>
     </div>
     <div class="controls">
       <button class="settings-button" @click="toggleSettings">
@@ -16,12 +32,35 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import ThemeToggle from './ThemeToggle.vue';
+
+const props = defineProps({
+  leftSidebarState: {
+    type: Number,
+    default: 2 
+  }
+});
+
+const emit = defineEmits(['toggle-settings', 'toggle-left-sidebar']);
 
 const showSettings = ref(false);
 
 function toggleSettings() {
-  showSettings.value = !showSettings.value;
+  emit('toggle-settings');
 }
+
+function toggleLeftSidebar() {
+  emit('toggle-left-sidebar');
+}
+
+const getSidebarToggleTitle = computed(() => {
+  if (props.leftSidebarState === 0) {
+    return 'Show sidebar';
+  } else if (props.leftSidebarState === 1) {
+    return 'Expand sidebar';
+  } else {
+    return 'Collapse sidebar';
+  }
+});
 </script>

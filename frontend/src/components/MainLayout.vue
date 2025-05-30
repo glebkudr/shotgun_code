@@ -1,7 +1,16 @@
 <template>
   <div class="flex flex-col h-screen w-screen bg-primary overflow-hidden">
+    <!-- Message Box for notifications -->
+    <MessageBox :messages="notificationMessages" />
+    
+    <!-- Settings Modal -->
+    <Settings :is-visible="isSettingsVisible" @close="toggleSettings" />
     <!-- Top Bar -->
-    <TopBar @toggle-settings="toggleSettings" />
+    <TopBar 
+      @toggle-settings="toggleSettings" 
+      @toggle-left-sidebar="toggleLeftSidebar"
+      :left-sidebar-state="leftSidebarState"
+    />
     
     <div class="flex flex-1 overflow-hidden">
       <!-- Left Sidebar - Navigation Only -->
@@ -116,6 +125,8 @@ import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
 import TopBar from './TopBar.vue';
 import RightSidebar from './RightSidebar.vue';
+import MessageBox from './MessageBox.vue';
+import Settings from './Settings.vue';
 import { ListFiles, RequestShotgunContextGeneration, SelectDirectory as SelectDirectoryGo, StartFileWatcher, StopFileWatcher, SetUseGitignore, SetUseCustomIgnore, SplitShotgunDiff } from '../../wailsjs/go/main/App';
 import { EventsOn, Environment } from '../../wailsjs/runtime/runtime';
 import themeStore from '../theme.js';
@@ -129,11 +140,13 @@ const steps = ref([
 ]);
 
 const logMessages = ref([]);
+const notificationMessages = ref([]);
 const centralPanelRef = ref(null); 
 const bottomConsoleRef = ref(null);
 const consoleMinHeight = 50;
 const consoleHeight = ref(parseInt(localStorage.getItem('shotgun-console-height')) || 150);
 const isConsoleVisible = ref(false);
+const isSettingsVisible = ref(false);
 
 function addLog(message, type = 'info', targetConsole = 'bottom') {
   const logEntry = {
@@ -150,6 +163,16 @@ function addLog(message, type = 'info', targetConsole = 'bottom') {
       centralPanelRef.value.addLogToStep3Console(message, type);
     }
   }
+  
+  // Add message to notification system
+  // We only keep the most recent message in the array
+  // The MessageBox component will only display the most recent one
+  notificationMessages.value = [logEntry];
+  
+  // After a short delay, clear the notification messages array
+  setTimeout(() => {
+    notificationMessages.value = [];
+  }, 3000);
 }
 
 const projectRoot = ref('');
@@ -174,6 +197,7 @@ const shotgunGitDiff = ref('');
 const splitLineLimitValue = ref(0);
 const rightSidebarWidth = ref(parseInt(localStorage.getItem('shotgun-right-sidebar-width')) || 250);
 const leftSidebarWidth = ref(parseInt(localStorage.getItem('shotgun-left-sidebar-width')) || 250);
+const leftSidebarState = ref(parseInt(localStorage.getItem('shotgun-left-sidebar-state')) || 2);
 const isResizing = ref(false);
 const startX = ref(0);
 const startWidth = ref(0);
@@ -602,6 +626,16 @@ function stopResize() {
 function handleLeftSidebarResize(newWidth) {
   leftSidebarWidth.value = newWidth;
   localStorage.setItem('shotgun-left-sidebar-width', newWidth);
+  
+  if (newWidth === 0) {
+    leftSidebarState.value = 0; 
+  } else if (newWidth >= 0 && newWidth < 140) {
+    leftSidebarState.value = 1; 
+  } else {
+    leftSidebarState.value = 2;
+  }
+  
+  localStorage.setItem('shotgun-left-sidebar-state', leftSidebarState.value);
 }
 
 function handleRightSidebarResize(newWidth) {
@@ -609,8 +643,48 @@ function handleRightSidebarResize(newWidth) {
   localStorage.setItem('shotgun-right-sidebar-width', newWidth);
 }
 
+let resizeTimer = null;
+
+function handleWindowResize() {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  
+  resizeTimer = setTimeout(() => {
+    const windowWidth = window.innerWidth;
+    
+    if (windowWidth < 768 && leftSidebarState.value === 2 && leftSidebarWidth.value > 140) {
+      leftSidebarState.value = 1;
+      leftSidebarWidth.value = previousWidths[1];
+      localStorage.setItem('shotgun-left-sidebar-state', leftSidebarState.value);
+      localStorage.setItem('shotgun-left-sidebar-width', leftSidebarWidth.value);
+    }
+    
+    if (windowWidth < 480 && leftSidebarState.value > 0) {
+      leftSidebarState.value = 0;
+      leftSidebarWidth.value = 0;
+      localStorage.setItem('shotgun-left-sidebar-state', leftSidebarState.value);
+      localStorage.setItem('shotgun-left-sidebar-width', leftSidebarWidth.value);
+    }
+  }, 100);
+}
+
+// Handle keyboard navigation for steps 1-4
+function handleKeyNavigation(event) {
+  // Only process number keys 1-4
+  if (event.key >= '1' && event.key <= '4') {
+    const stepId = parseInt(event.key);
+    // Check if we can navigate to this step
+    const step = steps.value.find(s => s.id === stepId);
+    if (step && (stepId === currentStep.value || stepId === 2 || stepId === 3 || stepId === 4 || (step && step.completed))) {
+      navigateToStep(stepId);
+    }
+  }
+}
+
 onMounted(() => {
-  // Load rules content from local storage if available
+  window.addEventListener('resize', handleWindowResize);
+  window.addEventListener('keydown', handleKeyNavigation);
+  handleWindowResize();
+  
   const savedRules = localStorage.getItem('shotgun-rules-content');
   if (savedRules) {
     rulesContent.value = savedRules;
@@ -672,18 +746,23 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(async () => {
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleWindowResize);
+  window.removeEventListener('keydown', handleKeyNavigation);
+  if (projectRoot.value) {
+    StopFileWatcher(projectRoot.value).catch(err => {
+      console.error('Error stopping file watcher:', err);
+    });
+  }
   document.removeEventListener('mousemove', doResize);
   document.removeEventListener('mouseup', stopResize);
   clearTimeout(debounceTimer);
   if (projectRoot.value) {
-    await StopFileWatcher().catch(err => console.error("Error stopping file watcher on unmount:", err));
     addLog(`File watcher stopped on component unmount for ${projectRoot.value}`, 'debug');
   }
   if (unlistenProjectFilesChanged) {
     unlistenProjectFilesChanged();
   }
-  // Remember to unlisten other events if they return unlistener functions
 });
 
 // Watch for checkbox/exclusion changes
@@ -779,7 +858,40 @@ function handleTemplateChange(templateKey) {
 }
 
 function toggleSettings() {
+  isSettingsVisible.value = !isSettingsVisible.value;
   addLog('Settings toggled', 'info', 'bottom');
+}
+
+const previousWidths = reactive({
+  1: parseInt(localStorage.getItem('shotgun-left-sidebar-min-width')) || 85,
+  2: parseInt(localStorage.getItem('shotgun-left-sidebar-full-width')) || 200
+});       
+
+function toggleLeftSidebar() {
+  leftSidebarState.value = (leftSidebarState.value + 1) % 3;
+  
+  if (leftSidebarState.value === 0) {
+    if (leftSidebarWidth.value > 0) {
+      if (leftSidebarWidth.value < 130) {
+        previousWidths[1] = leftSidebarWidth.value;
+        localStorage.setItem('shotgun-left-sidebar-min-width', previousWidths[1]);
+      } else {
+        previousWidths[2] = leftSidebarWidth.value;
+        localStorage.setItem('shotgun-left-sidebar-full-width', previousWidths[2]);
+      }
+    }
+    leftSidebarWidth.value = 0;
+  } else if (leftSidebarState.value === 1) {
+    leftSidebarWidth.value = previousWidths[1];
+  } else {
+    leftSidebarWidth.value = previousWidths[2];
+  }
+  
+  // Save state to localStorage
+  localStorage.setItem('shotgun-left-sidebar-state', leftSidebarState.value);
+  localStorage.setItem('shotgun-left-sidebar-width', leftSidebarWidth.value);
+  
+  addLog(`Left sidebar state changed to: ${leftSidebarState.value}`, 'info', 'bottom');
 }
 
 function handleStepCompletion(stepId) {
