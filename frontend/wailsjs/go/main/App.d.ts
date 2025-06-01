@@ -23,9 +23,7 @@ export function RefreshProject(arg1:string):Promise<void>;
 
 export function RemoveProject(arg1:string):Promise<void>;
 
-export function RequestShotgunContextGeneration(arg1:Array<string>,arg2:Array<string>):Promise<void>;
-
-export function RequestShotgunContextGenerationForAllProjects():Promise<void>;
+export function RequestShotgunContextGeneration(arg1:Array<string>,arg2:Record<string, Array<string>>):Promise<void>;
 
 export function SelectDirectory():Promise<string>;
 

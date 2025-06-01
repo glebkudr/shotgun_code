@@ -1,48 +1,12 @@
 <template>
   <div class="flex flex-col h-screen bg-gray-100">
-    <HorizontalStepper :current-step="currentStep" :steps="steps" @navigate="navigateToStep" :key="`hstepper-${currentStep}-${steps.map(s=>s.completed).join('')}`" />
-    <div class="flex flex-1 overflow-hidden">      <LeftSidebar 
-        :current-step="currentStep" 
-        :steps="steps" 
-        :projects="projects"
-        :all-file-nodes="allFileNodes"
-        :use-gitignore="useGitignore"
-        :use-custom-ignore="useCustomIgnore"
-        :loading-error="loadingError"
-        @navigate="navigateToStep"
-        @add-project="addProjectHandler"
-        @remove-project="removeProjectHandler"
-        @toggle-gitignore="toggleGitignoreHandler"
-        @toggle-custom-ignore="toggleCustomIgnoreHandler"
-        @toggle-exclude="toggleExcludeNode"
-        @custom-rules-updated="handleCustomRulesUpdated"
-        @add-log="({message, type}) => addLog(message, type)" />      <CentralPanel :current-step="currentStep" 
-                    :shotgun-prompt-context="shotgunPromptContext"
-                    :generation-progress="generationProgressData"
-                    :is-generating-context="isGeneratingContext"
-                    :projects="projects" 
-                    :platform="platform"
-                    :user-task="userTask"
-                    :rules-content="rulesContent"
-                    :split-diffs="splitDiffs"
-                    :is-loading-split-diffs="isLoadingSplitDiffs"
-                    :final-prompt="finalPrompt"
-                    :split-line-limit="splitLineLimitValue"
-                    :shotgun-git-diff="shotgunGitDiff"
-                    :split-line-limit-value="splitLineLimitValue"
-                    @step-action="handleStepAction"
-                    @update-composed-prompt="handleComposedPromptUpdate"
-                    @update:user-task="handleUserTaskUpdate"
-                    @update:rules-content="handleRulesContentUpdate"
-                    @update:shotgunGitDiff="handleShotgunGitDiffUpdate"
-                    @update:splitLineLimit="handleSplitLineLimitUpdate"
-                    ref="centralPanelRef" />
+    <HorizontalStepper :current-step="currentStep" :steps="steps" @navigate="navigateToStep" :key="`hstepper-${currentStep}-${steps.map(s => s.completed).join('')}`" />
+    <div class="flex flex-1 overflow-hidden">
+      <LeftSidebar :current-step="currentStep" :steps="steps" :projects="projects" :all-file-nodes="allFileNodes" :use-gitignore="useGitignore" :use-custom-ignore="useCustomIgnore" :loading-error="loadingError" @navigate="navigateToStep" @add-project="addProjectHandler" @remove-project="removeProjectHandler" @toggle-gitignore="toggleGitignoreHandler" @toggle-custom-ignore="toggleCustomIgnoreHandler" @toggle-exclude="toggleExcludeNode" @custom-rules-updated="handleCustomRulesUpdated" @add-log="({ message, type }) => addLog(message, type)" />
+      <CentralPanel :current-step="currentStep" :shotgun-prompt-context="shotgunPromptContext" :generation-progress="generationProgressData" :is-generating-context="isGeneratingContext" :projects="projects" :platform="platform" :user-task="userTask" :rules-content="rulesContent" :split-diffs="splitDiffs" :is-loading-split-diffs="isLoadingSplitDiffs" :final-prompt="finalPrompt" :split-line-limit="splitLineLimitValue" :shotgun-git-diff="shotgunGitDiff" :split-line-limit-value="splitLineLimitValue" @step-action="handleStepAction" @update-composed-prompt="handleComposedPromptUpdate"
+        @update:user-task="handleUserTaskUpdate" @update:rules-content="handleRulesContentUpdate" @update:shotgunGitDiff="handleShotgunGitDiffUpdate" @update:splitLineLimit="handleSplitLineLimitUpdate" ref="centralPanelRef" />
     </div>
-    <div 
-      @mousedown="startResize"
-      class="w-full h-2 bg-gray-300 hover:bg-gray-400 cursor-row-resize select-none"
-      title="Resize console height"
-    >
+    <div @mousedown="startResize" class="w-full h-2 bg-gray-300 hover:bg-gray-400 cursor-row-resize select-none" title="Resize console height">
     </div>
     <BottomConsole :log-messages="logMessages" :height="consoleHeight" ref="bottomConsoleRef" />
   </div>
@@ -66,7 +30,7 @@ const steps = ref([
 ]);
 
 const logMessages = ref([]);
-const centralPanelRef = ref(null); 
+const centralPanelRef = ref(null);
 const bottomConsoleRef = ref(null);
 const MIN_CONSOLE_HEIGHT = 50;
 const consoleHeight = ref(MIN_CONSOLE_HEIGHT); // Initial height in pixels
@@ -115,7 +79,7 @@ let unlistenProjectFilesChanged = null;
 
 async function addProjectHandler() {
   try {
-    const selectedDir = await SelectDirectoryGo(); 
+    const selectedDir = await SelectDirectoryGo();
     if (selectedDir) {
       // Check if project already exists
       const existingProject = projects.value.find(p => p.path === selectedDir);
@@ -136,7 +100,7 @@ async function addProjectHandler() {
       loadingError.value = '';
 
       await loadFileTreeForProject(newProject);
-      
+
       // Clear any previous splits when projects change
       splitDiffs.value = [];
 
@@ -147,7 +111,7 @@ async function addProjectHandler() {
       }
 
       addLog(`Project added: ${selectedDir}`, 'info', 'bottom');
-      
+
       // Trigger context generation for all projects
       debouncedTriggerShotgunContextGeneration();
     }
@@ -163,10 +127,10 @@ function removeProjectHandler(projectIndex) {
   if (projectIndex >= 0 && projectIndex < projects.value.length) {
     const removedProject = projects.value.splice(projectIndex, 1)[0];
     addLog(`Project removed: ${removedProject.path}`, 'info', 'bottom');
-    
+
     // Rebuild combined file nodes
     rebuildAllFileNodes();
-    
+
     // Clear context if no projects left
     if (projects.value.length === 0) {
       shotgunPromptContext.value = '';
@@ -177,7 +141,8 @@ function removeProjectHandler(projectIndex) {
     } else {
       // Trigger context generation for remaining projects
       debouncedTriggerShotgunContextGeneration();
-    }  }
+    }
+  }
 }
 
 function calculateNodeExcludedState(node) {
@@ -191,10 +156,9 @@ function calculateNodeExcludedState(node) {
 function mapDataToTreeRecursive(nodes, parent, projectPath = null) {
   if (!nodes) return [];
   return nodes.map(node => {
-    const isRootNode = parent === null;
     const reactiveNode = reactive({
       ...node,
-      expanded: node.isDir ? isRootNode : undefined,
+      expanded: node.isDir ? (node.relPath === '.') : undefined,
       parent: parent,
       children: [],
       projectPath: projectPath || (parent && parent.projectPath) || node.path
@@ -231,9 +195,14 @@ function toggleExcludeNode(nodeToToggle) {
     // Otherwise, normal toggle behavior.
     nodeToToggle.excluded = !nodeToToggle.excluded;
   }
-  manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
-  addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
-  
+
+  // Create a unique key for manuallyToggledNodes: projectPath + | + relPath
+  const manualToggleKey = `${nodeToToggle.projectPath}|${nodeToToggle.relPath}`;
+  manuallyToggledNodes.set(manualToggleKey, nodeToToggle.excluded);
+
+  addLog(`Toggled exclusion for ${nodeToToggle.name} (key: ${manualToggleKey}) to ${nodeToToggle.excluded}`, 'info', 'bottom');
+  console.log("manuallyToggledNodes updated:", new Map(manuallyToggledNodes)); // For debugging
+
   // Trigger context regeneration to reflect the change immediately
   debouncedTriggerShotgunContextGeneration();
 }
@@ -244,9 +213,15 @@ function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-faci
 }
 
 function _updateAllNodesExcludedStateRecursive(nodesToUpdate, parentIsVisuallyExcluded) {
-   if (!nodesToUpdate || nodesToUpdate.length === 0) return;
-   nodesToUpdate.forEach(node => {
-    const manualToggle = manuallyToggledNodes.get(node.relPath);
+  if (!nodesToUpdate || nodesToUpdate.length === 0) return;
+  nodesToUpdate.forEach(node => {
+    // Create the same unique key for lookup
+    const manualToggleKey = `${node.projectPath}|${node.relPath}`;
+    const manualToggle = manuallyToggledNodes.get(manualToggleKey);
+
+    // Logging for debugging this specific part:
+    // console.log(`Updating state for ${node.name} (key: ${manualToggleKey}), manualToggle: ${manualToggle}, parentExcluded: ${parentIsVisuallyExcluded}`);
+
     let isExcludedByRule = false;
     if (useGitignore.value && node.isGitignored) isExcludedByRule = true;
     if (useCustomIgnore.value && node.isCustomIgnored) isExcludedByRule = true;
@@ -256,15 +231,16 @@ function _updateAllNodesExcludedStateRecursive(nodesToUpdate, parentIsVisuallyEx
       node.excluded = manualToggle;
     } else {
       // If not manually toggled, it's excluded if a rule matches OR if its parent is visually excluded.
-      // This establishes the default inherited exclusion for visual purposes.
       node.excluded = isExcludedByRule || parentIsVisuallyExcluded;
     }
+    // console.log(`Resulting node.excluded for ${node.name} (key: ${manualToggleKey}): ${node.excluded}`);
 
-     if (node.children && node.children.length > 0) {
+
+    if (node.children && node.children.length > 0) {
       _updateAllNodesExcludedStateRecursive(node.children, node.excluded); // Pass current node's new visual excluded state
-     }
-   });
- }
+    }
+  });
+}
 
 function toggleGitignoreHandler(value) {
   useGitignore.value = value;
@@ -285,39 +261,36 @@ function toggleCustomIgnoreHandler(value) {
 }
 
 function debouncedTriggerShotgunContextGeneration() {
-  if (projects.value.length === 0) {
-    // Clear context and stop loading if no projects
-    shotgunPromptContext.value = ''; // Clear previous context
-    generationProgressData.value = { current: 0, total: 0 }; // Reset progress
-    isGeneratingContext.value = false;
-    return;
-  }
+  // if (projects.value.length === 0) {
+  //   // Clear context and stop loading if no projects
+  //   shotgunPromptContext.value = ''; // Clear previous context
+  //   generationProgressData.value = { current: 0, total: 0 }; // Reset progress
+  //   isGeneratingContext.value = false;
+  //   return;
+  // }
 
-  if (!isGeneratingContext.value) nextTick(() => isGeneratingContext.value = true);
+  // if (!isGeneratingContext.value) nextTick(() => isGeneratingContext.value = true);
 
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    if (projects.value.length === 0) { 
-        isGeneratingContext.value = false;
-        return;
+    if (projects.value.length === 0) {
+      isGeneratingContext.value = true;
+      // return;
     }
 
     addLog("Debounced trigger: Requesting shotgun context generation for all projects...", 'info');
-    
-    // Update all nodes excluded state for all projects
-    projects.value.forEach(project => {
-      updateAllNodesExcludedState(project.fileNodes);
-    });
-    
+
     generationProgressData.value = { current: 0, total: 0 }; // Reset progress before new request
 
     // Get all project paths
     const projectPaths = projects.value.map(p => p.path);
-    
-    // Collect excluded paths from all projects
-    const excludedPathsArray = [];
-    
-    // Helper to determine if a node has any visually included (checkbox checked) descendants
+
+    // NEW: Collect per-project excluded paths
+    // This will be an object like: { "/path/to/projectA": ["file.txt", "dir/"], "/path/to/projectB": [".", "another.log"] }
+    const projectSpecificExcludedPaths = {};
+
+    // Helper function to determine if a node has any visually included (checkbox checked) descendants
+    // This function needs to be defined within the scope or accessible to collectTrulyExcludedPathsForProject
     function hasVisuallyIncludedDescendant(node) {
       if (!node.isDir || !node.children || node.children.length === 0) {
         return false;
@@ -333,42 +306,93 @@ function debouncedTriggerShotgunContextGeneration() {
       return false;
     }
 
-    function collectTrulyExcludedPaths(nodes) {
-       if (!nodes) return;
-       nodes.forEach(node => {
-        // A node is TRULY excluded if its checkbox is unchecked (node.excluded is true)
-        // AND it does not have any descendant that is checked (visually included).
-        if (node.excluded && !hasVisuallyIncludedDescendant(node)) {
-          excludedPathsArray.push(node.relPath);
-          // If a node is truly excluded, its children are implicitly excluded from generation,
-          // so no need to recurse further for collecting excluded paths under this node.
-        } else {
-          // If the node is visually included OR it's visually excluded but has an included descendant
-          // (meaning this node's path needs to be in the tree structure for its descendant),
-          // then we must check its children for their own exclusion status.
-          if (node.children && node.children.length > 0) {
-            collectTrulyExcludedPaths(node.children);
+    function collectTrulyExcludedPathsForProject(projectFileNodes) {
+      const excludedForThisProject = [];
+
+      if (!projectFileNodes || projectFileNodes.length === 0) {
+        console.error("collectTrulyExcludedPathsForProject received empty or null projectFileNodes.");
+        return [];
+      }
+
+      // projectFileNodes is an array, typically with one root node for the project.
+      // Let's assume the first node is the project root.
+      const projectRootNode = projectFileNodes[0];
+
+      if (!projectRootNode) {
+        console.error("Project root node not found in projectFileNodes:", projectFileNodes);
+        return [];
+      }
+
+      // CRITICAL CHECK: If the project's root node (the one with relPath === '.')
+      // has its 'excluded' property set to true (meaning its checkbox is unchecked),
+      // then the entire project is considered excluded.
+      if (projectRootNode.relPath === '.' && projectRootNode.excluded === true) {
+        excludedForThisProject.push(".");
+        // If the root itself is excluded, we don't need to check its children for this project's exclusion list.
+        // The Go backend will handle skipping all content based on ".".
+        return excludedForThisProject;
+      }
+
+      // If the project root IS CHECKED (node.excluded is false), then we proceed to check its children
+      // for any individually excluded items.
+      function recurseCollectChildren(nodesToScan) {
+        if (!nodesToScan) return;
+        nodesToScan.forEach(childNode => {
+          // For any child node: if it's excluded AND it doesn't have any visually included descendants,
+          // then this childNode (and everything under it) is truly excluded.
+          if (childNode.excluded && !hasVisuallyIncludedDescendant(childNode)) {
+            excludedForThisProject.push(childNode.relPath); // childNode.relPath is relative to project root
+          } else {
+            // If the childNode is included, or excluded but has included descendants,
+            // recurse into its children to check them.
+            if (childNode.children && childNode.children.length > 0) {
+              recurseCollectChildren(childNode.children);
+            }
           }
-        }
-       });
-     }
-    
-    // Collect excluded paths from all projects
+        });
+      }
+
+      // Start recursion from the direct children of the project root,
+      // but only if the project root itself wasn't entirely excluded.
+      if (projectRootNode.children && projectRootNode.children.length > 0) {
+        recurseCollectChildren(projectRootNode.children);
+      }
+
+      return excludedForThisProject;
+    }
+
+    // Collect excluded paths for each project
     projects.value.forEach(project => {
-      collectTrulyExcludedPaths(project.fileNodes);
+      // Ensure visual states are up-to-date before collecting.
+      // This call is crucial for `node.excluded` to be correct.
+      updateAllNodesExcludedState(project.fileNodes);
+
+      // project.fileNodes is an array containing the single root node of the project.
+      const exclusionsForThisProject = collectTrulyExcludedPathsForProject(project.fileNodes);
+      projectSpecificExcludedPaths[project.path] = exclusionsForThisProject;
+      // More detailed logging
+      addLog(`Project: ${project.name} (${project.path}) - Root node excluded: ${project.fileNodes[0]?.excluded}, relPath: ${project.fileNodes[0]?.relPath}. Calculated Exclusions: ${JSON.stringify(exclusionsForThisProject)}`, 'debug');
     });
- 
-     RequestShotgunContextGeneration(projectPaths, excludedPathsArray)
-       .catch(err => {
+
+    addLog(`Final projectSpecificExcludedPaths being sent to Go: ${JSON.stringify(projectSpecificExcludedPaths)}`, 'debug');
+
+    // Call Go with the project paths and the new structured exclusions
+    RequestShotgunContextGeneration(projectPaths, projectSpecificExcludedPaths)
+
+    // Call Go with the project paths and the new structured exclusions
+    RequestShotgunContextGeneration(projectPaths, projectSpecificExcludedPaths)
+      .catch(err => {
         const errorMsg = "Error calling RequestShotgunContextGeneration: " + (err.message || err);
         addLog(errorMsg, 'error');
-        shotgunPromptContext.value = "Error: " + errorMsg; 
+        shotgunPromptContext.value = "Error: " + errorMsg;
       })
       .finally(() => {
-         // isGeneratingContext.value = false;
+        // isGeneratingContext.value = false; // This is typically handled by the 'shotgunContextGenerated' or 'shotgunContextError' events
       });
-  }, 750); 
+  }, 750);
 }
+
+
 
 function navigateToStep(stepId) {
   const targetStep = steps.value.find(s => s.id === stepId);
@@ -415,14 +439,14 @@ async function handleStepAction(actionName, payload) {
         addLog("Cannot execute prompt: Prompt from Step 2 is empty.", 'warn', 'both');
         return;
       }
-      addLog(`Simulating backend: Executing prompt (LLM call)... \nPrompt Preview (first 100 chars): "${composedLlmPrompt.value.substring(0,100)}..."`, 'info', 'step');
+      addLog(`Simulating backend: Executing prompt (LLM call)... \nPrompt Preview (first 100 chars): "${composedLlmPrompt.value.substring(0, 100)}..."`, 'info', 'step');
       // Here, you would actually send composedLlmPrompt.value to an LLM
       await new Promise(resolve => setTimeout(resolve, 1000));
       addLog('Backend: LLM call simulated. (Mocked response/diff would be processed here).', 'info', 'step');
       if (currentStepObj) currentStepObj.completed = true;
       // For now, just navigate to Step 4, as Step 3's "execution" is conceptual.
       // In a real app, Step 3 might display LLM output before proceeding.
-      navigateToStep(4); 
+      navigateToStep(4);
       break;
     case 'executePromptAndSplitDiff': // Handle the actual splitting action
       if (!payload || !payload.gitDiff || payload.lineLimit <= 0) {
@@ -438,7 +462,7 @@ async function handleStepAction(actionName, payload) {
         const result = await SplitShotgunDiff(payload.gitDiff, payload.lineLimit);
         splitDiffs.value = result;
         addLog(`Diff split into ${result.length} parts.`, 'success', 'bottom');
-        
+
         if (currentStepObj) currentStepObj.completed = true;
         navigateToStep(4);
 
@@ -471,7 +495,7 @@ function startResize(event) {
   isResizing.value = true;
   document.addEventListener('mousemove', doResize);
   document.addEventListener('mouseup', stopResize);
-  event.preventDefault(); 
+  event.preventDefault();
 }
 
 function doResize(event) {
@@ -496,10 +520,10 @@ onMounted(() => {
     addLog(`Shotgun context updated (${output.length} chars).`, 'success');
     const step1 = steps.value.find(s => s.id === 1);
     if (step1 && !step1.completed) {
-        step1.completed = true;
+      step1.completed = true;
     }
     if (currentStep.value === 1 && centralPanelRef.value?.updateStep2ShotgunContext) {
-        centralPanelRef.value.updateStep2ShotgunContext(output);
+      centralPanelRef.value.updateStep2ShotgunContext(output);
     }
     checkAndProcessPendingFileTreeReload(); // Check after context generation
   });
@@ -566,15 +590,15 @@ onBeforeUnmount(async () => {
 
 watch([projects, useGitignore, useCustomIgnore], ([newProjects, newUseGitignore, newUseCustomIgnore], [oldProjects, oldUseGitignore, oldUseCustomIgnore]) => {
   addLog("Watcher detected changes in projects, useGitignore, or useCustomIgnore. Re-evaluating context.", 'debug', 'bottom');
-  
+
   // Update all nodes excluded state for all projects
   projects.value.forEach(project => {
     updateAllNodesExcludedState(project.fileNodes);
   });
-  
+
   // Rebuild combined file nodes
   rebuildAllFileNodes();
-  
+
   debouncedTriggerShotgunContextGeneration();
 }, { deep: true });
 
@@ -584,25 +608,25 @@ watch(projects, async (newProjects, oldProjects) => {
     const oldPaths = oldProjects.map(p => p.path);
     const newPaths = newProjects.map(p => p.path);
     const removedPaths = oldPaths.filter(path => !newPaths.includes(path));
-    
+
     for (const removedPath of removedPaths) {
       await StopFileWatcher(removedPath).catch(err => addLog(`Error stopping watcher for ${removedPath}: ${err}`, 'error'));
       addLog(`File watcher stopped for ${removedPath}`, 'debug');
     }
   }
-  
+
   // Start watchers for new projects
   if (newProjects) {
     const oldPaths = oldProjects ? oldProjects.map(p => p.path) : [];
     const newPaths = newProjects.map(p => p.path);
     const addedPaths = newPaths.filter(path => !oldPaths.includes(path));
-    
+
     for (const addedPath of addedPaths) {
       await StartFileWatcher(addedPath).catch(err => addLog(`Error starting watcher for ${addedPath}: ${err}`, 'error'));
       addLog(`File watcher started for ${addedPath}`, 'debug');
     }
   }
-  
+
   if (newProjects.length === 0) {
     // No projects, clear everything
     allFileNodes.value = [];
@@ -619,7 +643,7 @@ function checkAndProcessPendingFileTreeReload() {
   if (projectFilesChangedPendingReload.value && !isGeneratingContext.value && projects.value.length > 0) {
     projectFilesChangedPendingReload.value = false;
     addLog("Watchman: Processing queued file tree reload for all projects.", 'info');
-    
+
     // Reload all projects
     Promise.all(projects.value.map(project => loadFileTreeForProject(project)))
       .then(() => {
@@ -667,7 +691,7 @@ async function loadFileTreeForProject(project) {
     const treeData = await ListFiles(project.path);
     project.fileNodes = mapDataToTreeRecursive(treeData, null, project.path);
     addLog(`File tree loaded for ${project.name}. Root items: ${project.fileNodes.length}`, 'info', 'bottom');
-    
+
     // Rebuild combined file nodes
     rebuildAllFileNodes();
   } catch (err) {
@@ -680,25 +704,24 @@ async function loadFileTreeForProject(project) {
 }
 
 function rebuildAllFileNodes() {
-  // Combine all project file nodes into a single tree structure
+  // Combine all project file nodes into a single list for the FileTree
   allFileNodes.value = [];
-  
+
   projects.value.forEach(project => {
     if (project.fileNodes && project.fileNodes.length > 0) {
-      // Create a project root node
-      const projectRootNode = reactive({
-        name: project.name,
-        path: project.path,
-        relPath: project.path,
-        isDir: true,
-        expanded: true,
-        excluded: false,
-        children: project.fileNodes,
-        isProjectRoot: true,
-        projectPath: project.path
-      });
-      
-      allFileNodes.value.push(projectRootNode);
+      // project.fileNodes from Go should be an array like:
+      // [ { name: "projName", path: "/abs/path/to/projName", relPath: ".", isDir: true, children: [...] } ]
+      // So, project.fileNodes[0] IS the actual root node for this project.
+      const actualProjectRootNode = project.fileNodes[0];
+
+      // Ensure it's expanded if it's a top-level item in the combined tree
+      if (actualProjectRootNode.isDir && actualProjectRootNode.expanded === undefined) {
+        actualProjectRootNode.expanded = true;
+      }
+      // Add a property to identify it as a project root in the FileTree if needed for styling/logic
+      // actualProjectRootNode.isProjectRootDisplay = true; // Or use existing `node.relPath === '.'`
+
+      allFileNodes.value.push(actualProjectRootNode);
     }
   });
 }

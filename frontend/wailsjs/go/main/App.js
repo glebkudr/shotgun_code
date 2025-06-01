@@ -46,10 +46,6 @@ export function RequestShotgunContextGeneration(arg1, arg2) {
   return window['go']['main']['App']['RequestShotgunContextGeneration'](arg1, arg2);
 }
 
-export function RequestShotgunContextGenerationForAllProjects() {
-  return window['go']['main']['App']['RequestShotgunContextGenerationForAllProjects']();
-}
-
 export function SelectDirectory() {
   return window['go']['main']['App']['SelectDirectory']();
 }
