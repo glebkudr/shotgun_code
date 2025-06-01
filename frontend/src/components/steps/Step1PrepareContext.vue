@@ -13,12 +13,10 @@
           </p>
         </div>
       </div>
-    </div>
-
-    <!-- Content Area (Textarea + Copy Button OR Error Message OR Placeholder) -->
-    <div v-else-if="projectRoot" class="mt-0 flex-grow flex flex-col">
+    </div>    <!-- Content Area (Textarea + Copy Button OR Error Message OR Placeholder) -->
+    <div v-else-if="projects.length > 0" class="mt-0 flex-grow flex flex-col">
       <div v-if="generatedContext && !generatedContext.startsWith('Error:')" class="flex-grow flex flex-col">
-        <h3 class="text-md font-medium text-gray-700 mb-2">Generated Project Context:</h3>
+        <h3 class="text-md font-medium text-gray-700 mb-2">Generated Project Context ({{ projects.length }} project{{ projects.length > 1 ? 's' : '' }}):</h3>
         <textarea
           :value="generatedContext"
           rows="10"
@@ -42,12 +40,27 @@
       <p v-else class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
         Project context will be generated automatically. If empty after generation, ensure files are selected and not all excluded.
       </p>
+    </div>    <!-- Initial message when no projects are selected -->
+    <div v-else class="flex-grow flex flex-col justify-center items-center text-center p-8">
+      <div class="max-w-md">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Welcome to Shotgun Code</h2>
+        <p class="text-gray-600 mb-6">
+          Get started by adding your project folders. This tool helps you generate comprehensive context for your codebase and create large diffs for AI-powered code generation.
+        </p>
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <h3 class="font-semibold text-blue-800 mb-2">Quick Start:</h3>
+          <ol class="text-sm text-blue-700 text-left space-y-1">
+            <li>1. Click "Add Project Folder" in the sidebar</li>
+            <li>2. Select your project directory</li>
+            <li>3. Review and configure file inclusion rules</li>
+            <li>4. Generate context for AI tools</li>
+          </ol>
+        </div>
+        <p class="text-sm text-gray-500">
+          Perfect for Python, JavaScript, and other dynamically-typed languages.
+        </p>
+      </div>
     </div>
-
-    <!-- Initial message when no project is selected -->
-    <p v-else class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
-      Select a project folder to begin.
-    </p>
   </div>
 </template>
 
@@ -63,6 +76,10 @@ const props = defineProps({
   projectRoot: {
     type: String,
     default: ''
+  },
+  projects: {
+    type: Array,
+    default: () => []
   },
   isLoadingContext: { // New prop
     type: Boolean,

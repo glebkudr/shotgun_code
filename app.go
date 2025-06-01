@@ -33,6 +33,15 @@ type AppSettings struct {
 	CustomPromptRules string `json:"customPromptRules"`
 }
 
+type Project struct {
+	ID            string                  `json:"id"`            // Unique identifier for the project
+	Name          string                  `json:"name"`          // Display name (usually the folder name)
+	RootPath      string                  `json:"rootPath"`      // Full path to the project directory
+	Gitignore     *gitignore.GitIgnore    `json:"-"`             // Compiled .gitignore for this project (not serialized)
+	FileTree      []*FileNode             `json:"fileTree"`      // Cached file tree for this project
+	ExcludedPaths map[string]bool         `json:"excludedPaths"` // User-excluded paths for this project
+}
+
 type App struct {
 	ctx                         context.Context
 	contextGenerator            *ContextGenerator
@@ -42,11 +51,16 @@ type App struct {
 	configPath                  string
 	useGitignore                bool
 	useCustomIgnore             bool
-	projectGitignore            *gitignore.GitIgnore // Compiled .gitignore for the current project
+	projects                    map[string]*Project         // Map of project ID to Project
+	projectOrder                []string                    // Ordered list of project IDs for consistent display
+	projectGitignore            *gitignore.GitIgnore        // Deprecated: kept for compatibility, will be removed
 }
 
 func NewApp() *App {
-	return &App{}
+	return &App{
+		projects:     make(map[string]*Project),
+		projectOrder: make([]string, 0),
+	}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -73,12 +87,13 @@ func (a *App) startup(ctx context.Context) {
 
 type FileNode struct {
 	Name            string      `json:"name"`
-	Path            string      `json:"path"`    // Full path
-	RelPath         string      `json:"relPath"` // Path relative to selected root
+	Path            string      `json:"path"`       // Full path
+	RelPath         string      `json:"relPath"`    // Path relative to selected root
 	IsDir           bool        `json:"isDir"`
 	Children        []*FileNode `json:"children,omitempty"`
 	IsGitignored    bool        `json:"isGitignored"`    // True if path matches a .gitignore rule
 	IsCustomIgnored bool        `json:"isCustomIgnored"` // True if path matches a ignore.glob rule
+	ProjectID       string      `json:"projectId"`       // ID of the project this node belongs to
 }
 
 // SelectDirectory opens a dialog to select a directory and returns the chosen path
@@ -285,14 +300,29 @@ func (cg *ContextGenerator) requestShotgunContextGenerationInternal(rootDir stri
 }
 
 // RequestShotgunContextGeneration is the method bound to Wails.
-func (a *App) RequestShotgunContextGeneration(rootDir string, excludedPaths []string) {
+// Updated to support multiple project paths
+func (a *App) RequestShotgunContextGeneration(projectPaths []string, excludedPaths []string) {
 	if a.contextGenerator == nil {
 		// This should not happen if startup initializes it correctly
 		runtime.LogError(a.ctx, "ContextGenerator not initialized")
 		runtime.EventsEmit(a.ctx, "shotgunContextError", "Internal error: ContextGenerator not initialized")
 		return
 	}
-	a.contextGenerator.requestShotgunContextGenerationInternal(rootDir, excludedPaths)
+	
+	if len(projectPaths) == 0 {
+		runtime.LogError(a.ctx, "No project paths provided")
+		runtime.EventsEmit(a.ctx, "shotgunContextError", "No project paths provided")
+		return
+	}
+	
+	// If only one project, use the existing single-project logic
+	if len(projectPaths) == 1 {
+		a.contextGenerator.requestShotgunContextGenerationInternal(projectPaths[0], excludedPaths)
+		return
+	}
+	
+	// Multiple projects - use new multi-project logic
+	a.contextGenerator.requestShotgunContextGenerationForMultiplePaths(projectPaths, excludedPaths)
 }
 
 // countProcessableItems estimates the total number of operations for progress tracking.
@@ -836,18 +866,14 @@ func (w *Watchman) RefreshIgnoresAndRescan() error {
 
 // --- Configuration Management ---
 
-func (a *App) compileCustomIgnorePatterns() error {
-	if strings.TrimSpace(a.settings.CustomIgnoreRules) == "" {
+func (a *App) compileCustomIgnorePatterns() error {	if strings.TrimSpace(a.settings.CustomIgnoreRules) == "" {
 		a.currentCustomIgnorePatterns = nil
 		runtime.LogDebug(a.ctx, "Custom ignore rules are empty, no patterns compiled.")
 		return nil
 	}
 	lines := strings.Split(strings.ReplaceAll(a.settings.CustomIgnoreRules, "\r\n", "\n"), "\n")
-	var validLines []string
-	for _, line := range lines {
-		// CompileIgnoreLines should handle empty/comment lines appropriately based on .gitignore syntax
-		validLines = append(validLines, line)
-	}
+	// CompileIgnoreLines should handle empty/comment lines appropriately based on .gitignore syntax
+	validLines := append([]string{}, lines...)
 
 	ign := gitignore.CompileIgnoreLines(validLines...)
 	// Поскольку CompileIgnoreLines в этой версии не возвращает ошибку,
@@ -938,7 +964,7 @@ func (a *App) saveSettings() error {
 // GetCustomIgnoreRules returns the current custom ignore rules as a string.
 func (a *App) GetCustomIgnoreRules() string {
 	// Ensure settings are loaded if they haven't been (e.g. if called before startup completes, though unlikely)
-	// However, loadSettings is called in startup, so this should generally be populated.
+	// Однако, loadSettings вызывается в старте, так что это должно быть населено обычно.
 	return a.settings.CustomIgnoreRules
 }
 
@@ -1003,4 +1029,844 @@ func (a *App) SetUseCustomIgnore(enabled bool) error {
 		return a.fileWatcher.RefreshIgnoresAndRescan()
 	}
 	return nil
+}
+
+// --- Multiple Projects Management ---
+
+// AddProject adds a new project to the app
+func (a *App) AddProject(dirPath string) (*Project, error) {
+	// Generate a unique ID for the project
+	projectID := fmt.Sprintf("project_%d", time.Now().UnixNano())
+	projectName := filepath.Base(dirPath)
+	
+	project := &Project{
+		ID:            projectID,
+		Name:          projectName,
+		RootPath:      dirPath,
+		ExcludedPaths: make(map[string]bool),
+	}
+	
+	// Load .gitignore for this project
+	gitignorePath := filepath.Join(dirPath, ".gitignore")
+	if _, err := os.Stat(gitignorePath); err == nil {
+		gitIgn, err := gitignore.CompileIgnoreFile(gitignorePath)
+		if err != nil {
+			runtime.LogWarningf(a.ctx, "Error compiling .gitignore file at %s: %v", gitignorePath, err)
+		} else {
+			project.Gitignore = gitIgn
+			runtime.LogDebugf(a.ctx, "Compiled .gitignore for project %s", projectName)
+		}
+	}
+	
+	// Build initial file tree
+	fileTree, err := a.buildProjectFileTree(project)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build file tree for project %s: %w", projectName, err)
+	}
+	project.FileTree = fileTree
+	
+	// Add to projects map and order
+	a.projects[projectID] = project
+	a.projectOrder = append(a.projectOrder, projectID)
+	
+	runtime.LogInfof(a.ctx, "Added project: %s (ID: %s)", projectName, projectID)
+	return project, nil
+}
+
+// RemoveProject removes a project from the app
+func (a *App) RemoveProject(projectID string) error {
+	if _, exists := a.projects[projectID]; !exists {
+		return fmt.Errorf("project with ID %s not found", projectID)
+	}
+	
+	// Remove from projects map
+	delete(a.projects, projectID)
+	
+	// Remove from project order
+	for i, id := range a.projectOrder {
+		if id == projectID {
+			a.projectOrder = append(a.projectOrder[:i], a.projectOrder[i+1:]...)
+			break
+		}
+	}
+	
+	runtime.LogInfof(a.ctx, "Removed project with ID: %s", projectID)
+	return nil
+}
+
+// GetProjects returns all projects in display order
+func (a *App) GetProjects() []*Project {
+	projects := make([]*Project, 0, len(a.projectOrder))
+	for _, projectID := range a.projectOrder {
+		if project, exists := a.projects[projectID]; exists {
+			projects = append(projects, project)
+		}
+	}
+	return projects
+}
+
+// GetProject returns a specific project by ID
+func (a *App) GetProject(projectID string) (*Project, bool) {
+	project, exists := a.projects[projectID]
+	return project, exists
+}
+
+// buildProjectFileTree builds the file tree for a specific project
+func (a *App) buildProjectFileTree(project *Project) ([]*FileNode, error) {
+	rootNode := &FileNode{
+		Name:            project.Name,
+		Path:            project.RootPath,
+		RelPath:         ".",
+		IsDir:           true,
+		ProjectID:       project.ID,
+		IsGitignored:    false,
+		IsCustomIgnored: a.currentCustomIgnorePatterns != nil && a.currentCustomIgnorePatterns.MatchesPath("."),
+	}
+
+	children, err := a.buildTreeRecursiveForProject(context.TODO(), project.RootPath, project.RootPath, project.Gitignore, a.currentCustomIgnorePatterns, 0, project.ID)
+	if err != nil {
+		return []*FileNode{rootNode}, fmt.Errorf("error building children tree for %s: %w", project.RootPath, err)
+	}
+	rootNode.Children = children
+
+	return []*FileNode{rootNode}, nil
+}
+
+// buildTreeRecursiveForProject is similar to buildTreeRecursive but includes project ID
+func (a *App) buildTreeRecursiveForProject(ctx context.Context, currentPath, rootPath string, gitIgn *gitignore.GitIgnore, customIgn *gitignore.GitIgnore, depth int, projectID string) ([]*FileNode, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	entries, err := os.ReadDir(currentPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var nodes []*FileNode
+	for _, entry := range entries {
+		nodePath := filepath.Join(currentPath, entry.Name())
+		relPath, _ := filepath.Rel(rootPath, nodePath)
+		
+		isGitignored := false
+		isCustomIgnored := false
+		pathToMatch := relPath
+		if entry.IsDir() {
+			if !strings.HasSuffix(pathToMatch, string(os.PathSeparator)) {
+				pathToMatch += string(os.PathSeparator)
+			}
+		}
+
+		if gitIgn != nil {
+			isGitignored = gitIgn.MatchesPath(pathToMatch)
+		}
+		if customIgn != nil {
+			isCustomIgnored = customIgn.MatchesPath(pathToMatch)
+		}
+
+		node := &FileNode{
+			Name:            entry.Name(),
+			Path:            nodePath,
+			RelPath:         relPath,
+			IsDir:           entry.IsDir(),
+			ProjectID:       projectID,
+			IsGitignored:    isGitignored,
+			IsCustomIgnored: isCustomIgnored,
+		}
+
+		if entry.IsDir() {
+			if !isGitignored && !isCustomIgnored {
+				children, err := a.buildTreeRecursiveForProject(ctx, nodePath, rootPath, gitIgn, customIgn, depth+1, projectID)
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return nil, err
+					}
+					runtime.LogWarningf(context.Background(), "Error building subtree for %s: %v", nodePath, err)
+				} else {
+					node.Children = children
+				}
+			}
+		}
+		nodes = append(nodes, node)
+	}
+	
+	// Sort nodes: directories first, then files, then alphabetically
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].IsDir != nodes[j].IsDir {
+			return nodes[i].IsDir // directories first
+		}
+		return nodes[i].Name < nodes[j].Name
+	})
+
+	return nodes, nil
+}
+
+// RefreshProject rebuilds the file tree for a specific project
+func (a *App) RefreshProject(projectID string) error {
+	project, exists := a.projects[projectID]
+	if !exists {
+		return fmt.Errorf("project with ID %s not found", projectID)
+	}
+	
+	fileTree, err := a.buildProjectFileTree(project)
+	if err != nil {
+		return fmt.Errorf("failed to refresh file tree for project %s: %w", project.Name, err)
+	}
+	
+	project.FileTree = fileTree
+	runtime.LogInfof(a.ctx, "Refreshed project: %s", project.Name)
+	return nil
+}
+
+// SelectDirectoryAndAddProject opens a dialog to select a directory and adds it as a project
+func (a *App) SelectDirectoryAndAddProject() (*Project, error) {
+	dirPath, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if dirPath == "" {
+		return nil, nil // User cancelled
+	}
+	
+	return a.AddProject(dirPath)
+}
+
+// ListAllProjects returns all projects with their file trees
+func (a *App) ListAllProjects() ([]*Project, error) {
+	return a.GetProjects(), nil
+}
+
+// ToggleExcludeNodeInProject toggles the exclusion state of a node in a specific project
+func (a *App) ToggleExcludeNodeInProject(projectID, nodePath string, excluded bool) error {
+	project, exists := a.projects[projectID]
+	if !exists {
+		return fmt.Errorf("project with ID %s not found", projectID)
+	}
+	
+	// Convert absolute path to relative path
+	relPath, err := filepath.Rel(project.RootPath, nodePath)
+	if err != nil {
+		return fmt.Errorf("failed to get relative path: %w", err)
+	}
+	
+	if excluded {
+		project.ExcludedPaths[relPath] = true
+	} else {
+		delete(project.ExcludedPaths, relPath)
+	}
+	
+	runtime.LogInfof(a.ctx, "Toggled exclusion for %s in project %s: %v", relPath, project.Name, excluded)
+	return nil
+}
+
+// GetExcludedPathsForProject returns the excluded paths for a specific project
+func (a *App) GetExcludedPathsForProject(projectID string) ([]string, error) {
+	project, exists := a.projects[projectID]
+	if !exists {
+		return nil, fmt.Errorf("project with ID %s not found", projectID)
+	}
+	
+	excludedPaths := make([]string, 0, len(project.ExcludedPaths))
+	for path := range project.ExcludedPaths {
+		excludedPaths = append(excludedPaths, path)
+	}
+	
+	return excludedPaths, nil
+}
+
+// RequestShotgunContextGenerationForAllProjects generates context for all projects
+func (a *App) RequestShotgunContextGenerationForAllProjects() {
+	if a.contextGenerator == nil {
+		runtime.LogError(a.ctx, "ContextGenerator not initialized")
+		runtime.EventsEmit(a.ctx, "shotgunContextError", "Internal error: ContextGenerator not initialized")
+		return
+	}
+	
+	projects := a.GetProjects()
+	if len(projects) == 0 {
+		runtime.EventsEmit(a.ctx, "shotgunContextError", "No projects added")
+		return
+	}
+	
+	a.contextGenerator.requestShotgunContextGenerationForMultipleProjects(projects)
+}
+
+// requestShotgunContextGenerationForMultipleProjects generates context for multiple projects
+func (cg *ContextGenerator) requestShotgunContextGenerationForMultipleProjects(projects []*Project) {
+	cg.mu.Lock()
+	if cg.currentCancelFunc != nil {
+		runtime.LogDebug(cg.app.ctx, "Cancelling previous context generation job.")
+		cg.currentCancelFunc()
+	}
+
+	genCtx, cancel := context.WithCancel(cg.app.ctx)
+	myToken := new(struct{}) // Create a unique token for this generation job
+	cg.currentCancelFunc = cancel
+	cg.currentCancelToken = myToken
+	runtime.LogInfof(cg.app.ctx, "Starting new shotgun context generation for %d projects. Max size: %d bytes.", len(projects), maxOutputSizeBytes)
+	cg.mu.Unlock()
+
+	go func(tokenForThisJob interface{}) {
+		jobStartTime := time.Now()
+		defer func() {
+			cg.mu.Lock()
+			if cg.currentCancelToken == tokenForThisJob { // Only clear if it's still this job's token
+				cg.currentCancelFunc = nil
+				cg.currentCancelToken = nil
+				runtime.LogDebug(cg.app.ctx, "Cleared currentCancelFunc for completed/cancelled job (token match).")
+			} else {
+				runtime.LogDebug(cg.app.ctx, "currentCancelFunc was replaced by a newer job (token mismatch); not clearing.")
+			}
+			cg.mu.Unlock()
+			runtime.LogInfof(cg.app.ctx, "Shotgun context generation goroutine finished in %s", time.Since(jobStartTime))
+		}()
+
+		if genCtx.Err() != nil { // Check for immediate cancellation
+			runtime.LogInfo(cg.app.ctx, fmt.Sprintf("Context generation for multiple projects cancelled before starting: %v", genCtx.Err()))
+			return
+		}
+
+		output, err := cg.app.generateShotgunOutputForMultipleProjects(genCtx, projects)
+
+		select {
+		case <-genCtx.Done():
+			errMsg := fmt.Sprintf("Shotgun context generation cancelled for multiple projects: %v", genCtx.Err())
+			runtime.LogInfo(cg.app.ctx, errMsg)
+			runtime.EventsEmit(cg.app.ctx, "shotgunContextError", errMsg)
+		default:
+			if err != nil {
+				errMsg := fmt.Sprintf("Error generating shotgun output for multiple projects: %v", err)
+				runtime.LogError(cg.app.ctx, errMsg)
+				runtime.EventsEmit(cg.app.ctx, "shotgunContextError", errMsg)
+			} else {
+				finalSize := len(output)
+				successMsg := fmt.Sprintf("Shotgun context generated successfully for %d projects. Size: %d bytes.", len(projects), finalSize)
+				if finalSize > maxOutputSizeBytes {
+					runtime.LogWarningf(cg.app.ctx, "Warning: Generated context size %d exceeds max %d, but was not caught by ErrContextTooLong.", finalSize, maxOutputSizeBytes)
+				}
+				runtime.LogInfo(cg.app.ctx, successMsg)
+				runtime.EventsEmit(cg.app.ctx, "shotgunContextGenerated", output)
+			}
+		}
+	}(myToken)
+}
+
+// generateShotgunOutputForMultipleProjects generates combined output for multiple projects
+func (a *App) generateShotgunOutputForMultipleProjects(jobCtx context.Context, projects []*Project) (string, error) {
+	if err := jobCtx.Err(); err != nil {
+		return "", err
+	}
+
+	var output strings.Builder
+	var fileContents strings.Builder
+
+	// Calculate total items across all projects for progress tracking
+	totalItems := 0
+	for _, project := range projects {
+		excludedMap := project.ExcludedPaths
+		count, err := a.countProcessableItemsForProject(jobCtx, project, excludedMap)
+		if err != nil {
+			return "", fmt.Errorf("failed to count processable items for project %s: %w", project.Name, err)
+		}
+		totalItems += count
+	}
+
+	progressState := &generationProgressState{processedItems: 0, totalItems: totalItems}
+	a.emitProgress(progressState)
+
+	// Process each project
+	for i, project := range projects {
+		if err := jobCtx.Err(); err != nil {
+			return "", err
+		}
+
+		// Add project header
+		projectHeader := fmt.Sprintf("\n=== PROJECT %d: %s ===\n", i+1, project.Name)
+		output.WriteString(projectHeader)
+		progressState.processedItems++
+		a.emitProgress(progressState)
+
+		if output.Len() > maxOutputSizeBytes {
+			return "", fmt.Errorf("%w: content limit of %d bytes exceeded after project header (size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, output.Len())
+		}
+
+		// Add project root directory line
+		output.WriteString(project.Name + string(os.PathSeparator) + "\n")
+		progressState.processedItems++
+		a.emitProgress(progressState)
+
+		if output.Len() > maxOutputSizeBytes {
+			return "", fmt.Errorf("%w: content limit of %d bytes exceeded after project root dir line (size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, output.Len())
+		}
+
+		// Build tree and file contents for this project
+		err := a.buildShotgunTreeRecursiveForProject(jobCtx, project, "", &output, &fileContents, progressState)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return "", err
+			}
+			return "", fmt.Errorf("failed to build content for project %s: %w", project.Name, err)
+		}
+
+		// Check size limit after each project
+		if output.Len()+fileContents.Len() > maxOutputSizeBytes {
+			return "", fmt.Errorf("%w: content limit of %d bytes exceeded after project %s (size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, project.Name, output.Len()+fileContents.Len())
+		}
+	}
+
+	return output.String() + "\n" + strings.TrimRight(fileContents.String(), "\n"), nil
+}
+
+// countProcessableItemsForProject counts items for a specific project
+func (a *App) countProcessableItemsForProject(jobCtx context.Context, project *Project, excludedMap map[string]bool) (int, error) {
+	count := 2 // For project header and root directory line
+
+	var counterHelper func(currentPath string) error
+	counterHelper = func(currentPath string) error {
+		select {
+		case <-jobCtx.Done():
+			return jobCtx.Err()
+		default:
+		}
+
+		entries, err := os.ReadDir(currentPath)
+		if err != nil {
+			runtime.LogWarningf(a.ctx, "countProcessableItemsForProject: error reading dir %s: %v", currentPath, err)
+			return nil
+		}
+
+		for _, entry := range entries {
+			path := filepath.Join(currentPath, entry.Name())
+			relPath, _ := filepath.Rel(project.RootPath, path)
+
+			if excludedMap[relPath] {
+				continue
+			}
+
+			count++ // For the tree entry
+
+			if entry.IsDir() {
+				err := counterHelper(path)
+				if err != nil {
+					return err
+				}
+			} else {
+				count++ // For reading the file content
+			}
+		}
+		return nil
+	}
+
+	err := counterHelper(project.RootPath)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// buildShotgunTreeRecursiveForProject builds tree content for a specific project
+func (a *App) buildShotgunTreeRecursiveForProject(pCtx context.Context, project *Project, prefix string, output, fileContents *strings.Builder, progressState *generationProgressState) error {
+	select {
+	case <-pCtx.Done():
+		return pCtx.Err()
+	default:
+	}
+
+	entries, err := os.ReadDir(project.RootPath)
+	if err != nil {
+		runtime.LogWarningf(a.ctx, "buildShotgunTreeRecursiveForProject: error reading dir %s: %v", project.RootPath, err)
+		return nil
+	}
+
+	// Sort entries
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDir() != entries[j].IsDir() {
+			return entries[i].IsDir()
+		}
+		return entries[i].Name() < entries[j].Name()
+	})
+
+	for _, entry := range entries {
+		select {
+		case <-pCtx.Done():
+			return pCtx.Err()
+		default:
+		}
+
+		path := filepath.Join(project.RootPath, entry.Name())
+		relPath, _ := filepath.Rel(project.RootPath, path)
+
+		// Check if excluded
+		if project.ExcludedPaths[relPath] {
+			continue
+		}
+
+		// Check ignore rules
+		isGitignored := false
+		isCustomIgnored := false
+		pathToMatch := relPath
+		if entry.IsDir() {
+			if !strings.HasSuffix(pathToMatch, string(os.PathSeparator)) {
+				pathToMatch += string(os.PathSeparator)
+			}
+		}
+
+		if project.Gitignore != nil && a.useGitignore {
+			isGitignored = project.Gitignore.MatchesPath(pathToMatch)
+		}
+		if a.currentCustomIgnorePatterns != nil && a.useCustomIgnore {
+			isCustomIgnored = a.currentCustomIgnorePatterns.MatchesPath(pathToMatch)
+		}
+
+		if isGitignored || isCustomIgnored {
+			continue
+		}
+
+		// Add to tree
+		if entry.IsDir() {
+			output.WriteString(prefix + entry.Name() + string(os.PathSeparator) + "\n")
+		} else {
+			output.WriteString(prefix + entry.Name() + "\n")
+		}
+		
+		progressState.processedItems++
+		a.emitProgress(progressState)
+
+		if output.Len() > maxOutputSizeBytes {
+			return fmt.Errorf("%w: tree content limit exceeded (size: %d bytes)", ErrContextTooLong, output.Len())
+		}
+
+		// Process files and directories
+		if entry.IsDir() {
+			err := a.buildShotgunTreeRecursiveForProjectDir(pCtx, path, project.RootPath, project, prefix+"  ", output, fileContents, progressState)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				runtime.LogWarningf(a.ctx, "Error processing directory %s: %v", path, err)
+			}
+		} else {
+			err := a.addFileContentToOutput(pCtx, path, relPath, fileContents, progressState)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				runtime.LogWarningf(a.ctx, "Error reading file %s: %v", path, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// buildShotgunTreeRecursiveForProjectDir recursively processes directories within a project
+func (a *App) buildShotgunTreeRecursiveForProjectDir(pCtx context.Context, currentPath, rootPath string, project *Project, prefix string, output, fileContents *strings.Builder, progressState *generationProgressState) error {
+	select {
+	case <-pCtx.Done():
+		return pCtx.Err()
+	default:
+	}
+
+	entries, err := os.ReadDir(currentPath)
+	if err != nil {
+		return err
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDir() != entries[j].IsDir() {
+			return entries[i].IsDir()
+		}
+		return entries[i].Name() < entries[j].Name()
+	})
+
+	for _, entry := range entries {
+		select {
+		case <-pCtx.Done():
+			return pCtx.Err()
+		default:
+		}
+
+		path := filepath.Join(currentPath, entry.Name())
+		relPath, _ := filepath.Rel(rootPath, path)
+
+		if project.ExcludedPaths[relPath] {
+			continue
+		}
+
+		// Check ignore rules
+		isGitignored := false
+		isCustomIgnored := false
+		pathToMatch := relPath
+		if entry.IsDir() {
+			if !strings.HasSuffix(pathToMatch, string(os.PathSeparator)) {
+				pathToMatch += string(os.PathSeparator)
+			}
+		}
+
+		if project.Gitignore != nil && a.useGitignore {
+			isGitignored = project.Gitignore.MatchesPath(pathToMatch)
+		}
+		if a.currentCustomIgnorePatterns != nil && a.useCustomIgnore {
+			isCustomIgnored = a.currentCustomIgnorePatterns.MatchesPath(pathToMatch)
+		}
+
+		if isGitignored || isCustomIgnored {
+			continue
+		}
+
+		// Add to tree
+		if entry.IsDir() {
+			output.WriteString(prefix + entry.Name() + string(os.PathSeparator) + "\n")
+		} else {
+			output.WriteString(prefix + entry.Name() + "\n")
+		}
+		
+		progressState.processedItems++
+		a.emitProgress(progressState)
+
+		if output.Len() > maxOutputSizeBytes {
+			return fmt.Errorf("%w: tree content limit exceeded (size: %d bytes)", ErrContextTooLong, output.Len())
+		}
+
+		if entry.IsDir() {
+			err := a.buildShotgunTreeRecursiveForProjectDir(pCtx, path, rootPath, project, prefix+"  ", output, fileContents, progressState)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				runtime.LogWarningf(a.ctx, "Error processing directory %s: %v", path, err)
+			}
+		} else {
+			err := a.addFileContentToOutput(pCtx, path, relPath, fileContents, progressState)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				runtime.LogWarningf(a.ctx, "Error reading file %s: %v", path, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// addFileContentToOutput adds file content to the output
+func (a *App) addFileContentToOutput(pCtx context.Context, filePath, relPath string, fileContents *strings.Builder, progressState *generationProgressState) error {
+	select {
+	case <-pCtx.Done():
+		return pCtx.Err()
+	default:
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	fileContents.WriteString(fmt.Sprintf("<file path=\"%s\">\n", relPath))
+	fileContents.Write(content)
+	if !strings.HasSuffix(string(content), "\n") {
+		fileContents.WriteString("\n")
+	}
+	fileContents.WriteString("</file>\n")
+
+	progressState.processedItems++
+	a.emitProgress(progressState)
+
+	if fileContents.Len() > maxOutputSizeBytes {
+		return fmt.Errorf("%w: file content limit exceeded (size: %d bytes)", ErrContextTooLong, fileContents.Len())
+	}
+
+	return nil
+}
+
+// requestShotgunContextGenerationForMultiplePaths generates context for multiple project paths
+func (cg *ContextGenerator) requestShotgunContextGenerationForMultiplePaths(projectPaths []string, excludedPaths []string) {
+	cg.mu.Lock()
+	if cg.currentCancelFunc != nil {
+		cg.currentCancelFunc()
+	}
+
+	genCtx, cancel := context.WithCancel(cg.app.ctx)
+	myToken := new(struct{})
+	cg.currentCancelFunc = cancel
+	cg.currentCancelToken = myToken
+	cg.mu.Unlock()
+
+	go func(tokenForThisJob interface{}) {
+		defer func() {
+			cg.mu.Lock()
+			if cg.currentCancelToken == tokenForThisJob {
+				cg.currentCancelFunc = nil
+				cg.currentCancelToken = nil
+			}
+			cg.mu.Unlock()
+		}()
+
+		excludedMap := make(map[string]bool)
+		for _, path := range excludedPaths {
+			excludedMap[path] = true
+		}
+
+		var outputBuilder strings.Builder
+		for i, projectPath := range projectPaths {
+			select {
+			case <-genCtx.Done():
+				runtime.EventsEmit(cg.app.ctx, "shotgunContextCancelled", "Context generation was cancelled")
+				return
+			default:
+			}
+
+			if i > 0 {
+				outputBuilder.WriteString("\n\n")
+			}
+			
+			projectName := filepath.Base(projectPath)
+			outputBuilder.WriteString(fmt.Sprintf("=== PROJECT: %s ===\n", projectName))
+			outputBuilder.WriteString(fmt.Sprintf("Project Root: %s\n\n", projectPath))
+
+			projectContent, _, _, err := cg.generateContextForSingleProject(genCtx, projectPath, excludedMap)
+			if err != nil {
+				outputBuilder.WriteString(fmt.Sprintf("ERROR: Failed to process project: %v\n", err))
+				continue
+			}
+
+			if outputBuilder.Len()+len(projectContent) > maxOutputSizeBytes {
+				outputBuilder.WriteString("*** TRUNCATED: Context size limit reached ***\n")
+				break
+			}
+
+			outputBuilder.WriteString(projectContent)
+			runtime.EventsEmit(cg.app.ctx, "shotgunContextProgress", map[string]interface{}{
+				"current": i + 1,
+				"total":   len(projectPaths),
+				"message": fmt.Sprintf("Processed project: %s", projectName),
+			})
+		}
+
+		runtime.EventsEmit(cg.app.ctx, "shotgunContextGenerated", outputBuilder.String())
+	}(myToken)
+}
+
+// generateContextForSingleProject generates context for a single project path
+func (cg *ContextGenerator) generateContextForSingleProject(ctx context.Context, projectPath string, excludedMap map[string]bool) (string, int, int, error) {
+	if err := ctx.Err(); err != nil {
+		return "", 0, 0, err
+	}
+
+	var output strings.Builder
+	var fileContents strings.Builder
+
+	// Root directory line
+	output.WriteString(filepath.Base(projectPath) + string(os.PathSeparator) + "\n")
+	if output.Len() > maxOutputSizeBytes {
+		return "", 0, 0, fmt.Errorf("%w: content limit of %d bytes exceeded after root dir line (size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, output.Len())
+	}
+	var fileCount, totalSize int
+	var buildShotgunTreeRecursive func(pCtx context.Context, currentPath, prefix string) error
+	buildShotgunTreeRecursive = func(pCtx context.Context, currentPath, prefix string) error {
+		select {
+		case <-pCtx.Done():
+			return pCtx.Err()
+		default:
+		}
+
+		entries, err := os.ReadDir(currentPath)
+		if err != nil {
+			runtime.LogWarningf(cg.app.ctx, "buildShotgunTreeRecursive: error reading dir %s: %v", currentPath, err)
+			return nil // Skip this directory
+		}
+
+		// Sort entries like in ListFiles for consistent tree
+		sort.SliceStable(entries, func(i, j int) bool {
+			entryI := entries[i]
+			entryJ := entries[j]
+			isDirI := entryI.IsDir()
+			isDirJ := entryJ.IsDir()
+			if isDirI && !isDirJ {
+				return true
+			}
+			if !isDirI && isDirJ {
+				return false
+			}
+			return strings.ToLower(entryI.Name()) < strings.ToLower(entryJ.Name())
+		})
+
+		for _, entry := range entries {
+			select {
+			case <-pCtx.Done():
+				return pCtx.Err()
+			default:
+			}
+
+			path := filepath.Join(currentPath, entry.Name())
+			relPath, _ := filepath.Rel(projectPath, path)
+
+			if excludedMap[relPath] {
+				continue
+			}
+
+			// Add to tree
+			if entry.IsDir() {
+				output.WriteString(prefix + entry.Name() + string(os.PathSeparator) + "\n")
+			} else {
+				output.WriteString(prefix + entry.Name() + "\n")
+			}
+			
+			if output.Len() > maxOutputSizeBytes {
+				return fmt.Errorf("%w: content limit of %d bytes exceeded during tree generation (size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, output.Len())
+			}
+
+			// Process files and directories
+			if entry.IsDir() {
+				err := buildShotgunTreeRecursive(pCtx, path, prefix+"  ")
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return err
+					}
+					runtime.LogWarningf(cg.app.ctx, "Error processing directory %s: %v", path, err)
+				}
+			} else {
+				select { // Check before heavy I/O
+				case <-pCtx.Done():
+					return pCtx.Err()
+				default:
+				}
+				content, err := os.ReadFile(path)
+				if err != nil {
+					runtime.LogWarningf(cg.app.ctx, "Error reading file %s: %v", path, err)
+					content = []byte(fmt.Sprintf("Error reading file: %v", err))
+				}
+
+				fileCount++
+				totalSize += len(content)
+
+				// Ensure forward slashes for the name attribute, consistent with documentation.
+				relPathForwardSlash := filepath.ToSlash(relPath)
+
+				fileContents.WriteString(fmt.Sprintf("<file path=\"%s\">\n", relPathForwardSlash))
+				fileContents.WriteString(string(content))
+				fileContents.WriteString("\n</file>\n") // Each file block ends with a newline
+
+				if output.Len()+fileContents.Len() > maxOutputSizeBytes { // Final check after append
+					return fmt.Errorf("%w: content limit of %d bytes exceeded after appending file %s (total size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, relPath, output.Len()+fileContents.Len())
+				}
+			}
+		}
+		return nil
+	}
+
+	err := buildShotgunTreeRecursive(ctx, projectPath, "")
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("failed to build tree for shotgun: %w", err)
+	}
+
+	if err := ctx.Err(); err != nil { // Check for cancellation before final string operations
+		return "", 0, 0, err
+	}
+
+	// The final output is the tree, a newline, then all concatenated file contents.
+	return output.String() + "\n" + strings.TrimRight(fileContents.String(), "\n"), fileCount, totalSize, nil
 }

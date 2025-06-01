@@ -16,11 +16,10 @@
         <span @click="node.isDir ? toggleExpand(node) : null" :class="{ 'folder-name': node.isDir }">
           {{ node.name }}
         </span>
-      </div>
-      <FileTree 
+      </div>      <FileTree 
         v-if="node.isDir && node.expanded && node.children" 
         :nodes="node.children" 
-        :project-root="projectRoot"
+        :projects="projects"
         :depth="depth + 1"
         @toggle-exclude="emitToggleExclude"
       />
@@ -33,7 +32,7 @@ import { defineProps, defineEmits } from 'vue';
 
 const props = defineProps({
   nodes: Array,
-  projectRoot: String,
+  projects: { type: Array, default: () => [] }, // Array of project objects
   depth: {
     type: Number,
     default: 0
