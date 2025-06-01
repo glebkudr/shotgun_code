@@ -34,12 +34,12 @@ type AppSettings struct {
 }
 
 type Project struct {
-	ID            string                  `json:"id"`            // Unique identifier for the project
-	Name          string                  `json:"name"`          // Display name (usually the folder name)
-	RootPath      string                  `json:"rootPath"`      // Full path to the project directory
-	Gitignore     *gitignore.GitIgnore    `json:"-"`             // Compiled .gitignore for this project (not serialized)
-	FileTree      []*FileNode             `json:"fileTree"`      // Cached file tree for this project
-	ExcludedPaths map[string]bool         `json:"excludedPaths"` // User-excluded paths for this project
+	ID            string               `json:"id"`            // Unique identifier for the project
+	Name          string               `json:"name"`          // Display name (usually the folder name)
+	RootPath      string               `json:"rootPath"`      // Full path to the project directory
+	Gitignore     *gitignore.GitIgnore `json:"-"`             // Compiled .gitignore for this project (not serialized)
+	FileTree      []*FileNode          `json:"fileTree"`      // Cached file tree for this project
+	ExcludedPaths map[string]bool      `json:"excludedPaths"` // User-excluded paths for this project
 }
 
 type App struct {
@@ -51,9 +51,9 @@ type App struct {
 	configPath                  string
 	useGitignore                bool
 	useCustomIgnore             bool
-	projects                    map[string]*Project         // Map of project ID to Project
-	projectOrder                []string                    // Ordered list of project IDs for consistent display
-	projectGitignore            *gitignore.GitIgnore        // Deprecated: kept for compatibility, will be removed
+	projects                    map[string]*Project  // Map of project ID to Project
+	projectOrder                []string             // Ordered list of project IDs for consistent display
+	projectGitignore            *gitignore.GitIgnore // Deprecated: kept for compatibility, will be removed
 }
 
 func NewApp() *App {
@@ -87,8 +87,8 @@ func (a *App) startup(ctx context.Context) {
 
 type FileNode struct {
 	Name            string      `json:"name"`
-	Path            string      `json:"path"`       // Full path
-	RelPath         string      `json:"relPath"`    // Path relative to selected root
+	Path            string      `json:"path"`    // Full path
+	RelPath         string      `json:"relPath"` // Path relative to selected root
 	IsDir           bool        `json:"isDir"`
 	Children        []*FileNode `json:"children,omitempty"`
 	IsGitignored    bool        `json:"isGitignored"`    // True if path matches a .gitignore rule
@@ -308,19 +308,19 @@ func (a *App) RequestShotgunContextGeneration(projectPaths []string, excludedPat
 		runtime.EventsEmit(a.ctx, "shotgunContextError", "Internal error: ContextGenerator not initialized")
 		return
 	}
-	
+
 	if len(projectPaths) == 0 {
 		runtime.LogError(a.ctx, "No project paths provided")
 		runtime.EventsEmit(a.ctx, "shotgunContextError", "No project paths provided")
 		return
 	}
-	
+
 	// If only one project, use the existing single-project logic
 	if len(projectPaths) == 1 {
 		a.contextGenerator.requestShotgunContextGenerationInternal(projectPaths[0], excludedPaths)
 		return
 	}
-	
+
 	// Multiple projects - use new multi-project logic
 	a.contextGenerator.requestShotgunContextGenerationForMultiplePaths(projectPaths, excludedPaths)
 }
@@ -394,6 +394,13 @@ func (a *App) generateShotgunOutputWithProgress(jobCtx context.Context, rootDir 
 	excludedMap := make(map[string]bool)
 	for _, p := range excludedPaths {
 		excludedMap[p] = true
+	}
+	if excludedMap["."] {
+		runtime.LogDebugf(a.ctx, "Project root '%s' (relPath '.') is excluded by frontend. Returning minimal context.", rootDir)
+		var sb strings.Builder
+		sb.WriteString(filepath.Base(rootDir) + string(os.PathSeparator) + "\n")
+		// sb.WriteString("  └── (all content excluded)\n") // Optional marker
+		return sb.String(), nil // Return minimal string and no error
 	}
 
 	totalItems, err := a.countProcessableItems(jobCtx, rootDir, excludedMap)
@@ -866,7 +873,8 @@ func (w *Watchman) RefreshIgnoresAndRescan() error {
 
 // --- Configuration Management ---
 
-func (a *App) compileCustomIgnorePatterns() error {	if strings.TrimSpace(a.settings.CustomIgnoreRules) == "" {
+func (a *App) compileCustomIgnorePatterns() error {
+	if strings.TrimSpace(a.settings.CustomIgnoreRules) == "" {
 		a.currentCustomIgnorePatterns = nil
 		runtime.LogDebug(a.ctx, "Custom ignore rules are empty, no patterns compiled.")
 		return nil
@@ -1038,14 +1046,14 @@ func (a *App) AddProject(dirPath string) (*Project, error) {
 	// Generate a unique ID for the project
 	projectID := fmt.Sprintf("project_%d", time.Now().UnixNano())
 	projectName := filepath.Base(dirPath)
-	
+
 	project := &Project{
 		ID:            projectID,
 		Name:          projectName,
 		RootPath:      dirPath,
 		ExcludedPaths: make(map[string]bool),
 	}
-	
+
 	// Load .gitignore for this project
 	gitignorePath := filepath.Join(dirPath, ".gitignore")
 	if _, err := os.Stat(gitignorePath); err == nil {
@@ -1057,18 +1065,18 @@ func (a *App) AddProject(dirPath string) (*Project, error) {
 			runtime.LogDebugf(a.ctx, "Compiled .gitignore for project %s", projectName)
 		}
 	}
-	
+
 	// Build initial file tree
 	fileTree, err := a.buildProjectFileTree(project)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build file tree for project %s: %w", projectName, err)
 	}
 	project.FileTree = fileTree
-	
+
 	// Add to projects map and order
 	a.projects[projectID] = project
 	a.projectOrder = append(a.projectOrder, projectID)
-	
+
 	runtime.LogInfof(a.ctx, "Added project: %s (ID: %s)", projectName, projectID)
 	return project, nil
 }
@@ -1078,10 +1086,10 @@ func (a *App) RemoveProject(projectID string) error {
 	if _, exists := a.projects[projectID]; !exists {
 		return fmt.Errorf("project with ID %s not found", projectID)
 	}
-	
+
 	// Remove from projects map
 	delete(a.projects, projectID)
-	
+
 	// Remove from project order
 	for i, id := range a.projectOrder {
 		if id == projectID {
@@ -1089,7 +1097,7 @@ func (a *App) RemoveProject(projectID string) error {
 			break
 		}
 	}
-	
+
 	runtime.LogInfof(a.ctx, "Removed project with ID: %s", projectID)
 	return nil
 }
@@ -1149,7 +1157,7 @@ func (a *App) buildTreeRecursiveForProject(ctx context.Context, currentPath, roo
 	for _, entry := range entries {
 		nodePath := filepath.Join(currentPath, entry.Name())
 		relPath, _ := filepath.Rel(rootPath, nodePath)
-		
+
 		isGitignored := false
 		isCustomIgnored := false
 		pathToMatch := relPath
@@ -1191,7 +1199,7 @@ func (a *App) buildTreeRecursiveForProject(ctx context.Context, currentPath, roo
 		}
 		nodes = append(nodes, node)
 	}
-	
+
 	// Sort nodes: directories first, then files, then alphabetically
 	sort.Slice(nodes, func(i, j int) bool {
 		if nodes[i].IsDir != nodes[j].IsDir {
@@ -1209,12 +1217,12 @@ func (a *App) RefreshProject(projectID string) error {
 	if !exists {
 		return fmt.Errorf("project with ID %s not found", projectID)
 	}
-	
+
 	fileTree, err := a.buildProjectFileTree(project)
 	if err != nil {
 		return fmt.Errorf("failed to refresh file tree for project %s: %w", project.Name, err)
 	}
-	
+
 	project.FileTree = fileTree
 	runtime.LogInfof(a.ctx, "Refreshed project: %s", project.Name)
 	return nil
@@ -1229,7 +1237,7 @@ func (a *App) SelectDirectoryAndAddProject() (*Project, error) {
 	if dirPath == "" {
 		return nil, nil // User cancelled
 	}
-	
+
 	return a.AddProject(dirPath)
 }
 
@@ -1244,19 +1252,19 @@ func (a *App) ToggleExcludeNodeInProject(projectID, nodePath string, excluded bo
 	if !exists {
 		return fmt.Errorf("project with ID %s not found", projectID)
 	}
-	
+
 	// Convert absolute path to relative path
 	relPath, err := filepath.Rel(project.RootPath, nodePath)
 	if err != nil {
 		return fmt.Errorf("failed to get relative path: %w", err)
 	}
-	
+
 	if excluded {
 		project.ExcludedPaths[relPath] = true
 	} else {
 		delete(project.ExcludedPaths, relPath)
 	}
-	
+
 	runtime.LogInfof(a.ctx, "Toggled exclusion for %s in project %s: %v", relPath, project.Name, excluded)
 	return nil
 }
@@ -1267,12 +1275,12 @@ func (a *App) GetExcludedPathsForProject(projectID string) ([]string, error) {
 	if !exists {
 		return nil, fmt.Errorf("project with ID %s not found", projectID)
 	}
-	
+
 	excludedPaths := make([]string, 0, len(project.ExcludedPaths))
 	for path := range project.ExcludedPaths {
 		excludedPaths = append(excludedPaths, path)
 	}
-	
+
 	return excludedPaths, nil
 }
 
@@ -1283,13 +1291,13 @@ func (a *App) RequestShotgunContextGenerationForAllProjects() {
 		runtime.EventsEmit(a.ctx, "shotgunContextError", "Internal error: ContextGenerator not initialized")
 		return
 	}
-	
+
 	projects := a.GetProjects()
 	if len(projects) == 0 {
 		runtime.EventsEmit(a.ctx, "shotgunContextError", "No projects added")
 		return
 	}
-	
+
 	a.contextGenerator.requestShotgunContextGenerationForMultipleProjects(projects)
 }
 
@@ -1545,7 +1553,7 @@ func (a *App) buildShotgunTreeRecursiveForProject(pCtx context.Context, project 
 		} else {
 			output.WriteString(prefix + entry.Name() + "\n")
 		}
-		
+
 		progressState.processedItems++
 		a.emitProgress(progressState)
 
@@ -1637,7 +1645,7 @@ func (a *App) buildShotgunTreeRecursiveForProjectDir(pCtx context.Context, curre
 		} else {
 			output.WriteString(prefix + entry.Name() + "\n")
 		}
-		
+
 		progressState.processedItems++
 		a.emitProgress(progressState)
 
@@ -1737,7 +1745,7 @@ func (cg *ContextGenerator) requestShotgunContextGenerationForMultiplePaths(proj
 			if i > 0 {
 				outputBuilder.WriteString("\n\n")
 			}
-			
+
 			projectName := filepath.Base(projectPath)
 			outputBuilder.WriteString(fmt.Sprintf("=== PROJECT: %s ===\n", projectName))
 			outputBuilder.WriteString(fmt.Sprintf("Project Root: %s\n\n", projectPath))
@@ -1767,6 +1775,18 @@ func (cg *ContextGenerator) requestShotgunContextGenerationForMultiplePaths(proj
 
 // generateContextForSingleProject generates context for a single project path
 func (cg *ContextGenerator) generateContextForSingleProject(ctx context.Context, projectPath string, excludedMap map[string]bool) (string, int, int, error) {
+	if excludedMap["."] {
+		runtime.LogDebugf(cg.app.ctx, "Project root '%s' (relPath '.') is explicitly excluded by frontend. Generating minimal output for this project.", projectPath)
+
+		var minimalOutput strings.Builder
+		// The shotgun format expects the project root name even if its contents are excluded.
+		minimalOutput.WriteString(filepath.Base(projectPath) + string(os.PathSeparator) + "\n")
+		// Optionally, add a marker to indicate to the user why it's empty:
+		// minimalOutput.WriteString("  └── (all content excluded)\n")
+
+		// Return this minimal tree string, 0 files, 0 size.
+		return minimalOutput.String(), 0, 0, nil
+	}
 	if err := ctx.Err(); err != nil {
 		return "", 0, 0, err
 	}
@@ -1829,7 +1849,7 @@ func (cg *ContextGenerator) generateContextForSingleProject(ctx context.Context,
 			} else {
 				output.WriteString(prefix + entry.Name() + "\n")
 			}
-			
+
 			if output.Len() > maxOutputSizeBytes {
 				return fmt.Errorf("%w: content limit of %d bytes exceeded during tree generation (size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, output.Len())
 			}
@@ -1889,13 +1909,13 @@ func (cg *ContextGenerator) generateContextForSingleProject(ctx context.Context,
 // hasIncludableContent checks if a project has any files that would be included in the output
 func (a *App) hasIncludableContent(jobCtx context.Context, project *Project) (bool, error) {
 	var hasContent bool
-	
+
 	var checkHelper func(currentPath string) error
 	checkHelper = func(currentPath string) error {
 		if hasContent {
 			return nil // Early exit if we already found content
 		}
-		
+
 		select {
 		case <-jobCtx.Done():
 			return jobCtx.Err()
@@ -1912,7 +1932,7 @@ func (a *App) hasIncludableContent(jobCtx context.Context, project *Project) (bo
 			if hasContent {
 				return nil // Early exit if we already found content
 			}
-			
+
 			path := filepath.Join(currentPath, entry.Name())
 			relPath, _ := filepath.Rel(project.RootPath, path)
 
@@ -1946,13 +1966,13 @@ func (a *App) hasIncludableContent(jobCtx context.Context, project *Project) (bo
 			hasContent = true
 			return nil
 		}
-		
+
 		// Check subdirectories
 		for _, entry := range entries {
 			if hasContent {
 				return nil // Early exit if we already found content
 			}
-			
+
 			if entry.IsDir() {
 				path := filepath.Join(currentPath, entry.Name())
 				relPath, _ := filepath.Rel(project.RootPath, path)
@@ -1985,7 +2005,7 @@ func (a *App) hasIncludableContent(jobCtx context.Context, project *Project) (bo
 				}
 			}
 		}
-		
+
 		return nil
 	}
 
@@ -1993,6 +2013,6 @@ func (a *App) hasIncludableContent(jobCtx context.Context, project *Project) (bo
 	if err != nil {
 		return false, err
 	}
-	
+
 	return hasContent, nil
 }
