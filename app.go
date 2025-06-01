@@ -1684,86 +1684,115 @@ func (a *App) addFileContentToOutput(pCtx context.Context, filePath, relPath str
 }
 
 // requestShotgunContextGenerationForMultiplePaths generates context for multiple project paths
-func (cg *ContextGenerator) requestShotgunContextGenerationForMultiplePaths(projectPaths []string, projectSpecificExcludedPaths map[string][]string) { // <--- MODIFIED
+func (cg *ContextGenerator) requestShotgunContextGenerationForMultiplePaths(projectPaths []string, projectSpecificExcludedPaths map[string][]string) {
 	cg.mu.Lock()
+	// Create a new context and cancel function for THIS specific request.
+	genCtx, cancelThisJob := context.WithCancel(cg.app.ctx) // Parent is app's main context
+	myToken := new(struct{})                                // Unique token for this job
+
+	// If there's an old job running, tell it to cancel.
 	if cg.currentCancelFunc != nil {
-		cg.currentCancelFunc()
+		runtime.LogDebug(cg.app.ctx, fmt.Sprintf("Cancelling previous context generation job (token: %p) due to new request (new token: %p).", cg.currentCancelToken, myToken))
+		cg.currentCancelFunc() // Call the cancel func of the PREVIOUS job
 	}
 
-	genCtx, cancel := context.WithCancel(cg.app.ctx)
-	myToken := new(struct{})
-	cg.currentCancelFunc = cancel
+	// Now, store the cancel function and token for THIS job.
+	cg.currentCancelFunc = cancelThisJob
 	cg.currentCancelToken = myToken
-	cg.mu.Unlock()
+	cg.mu.Unlock() // Unlock before starting the goroutine
 
-	go func(tokenForThisJob interface{}) {
+	runtime.LogInfof(cg.app.ctx, "Starting new shotgun context generation (token: %p) for %d paths.", myToken, len(projectPaths))
+
+	go func(jobCtx context.Context, jobToken interface{}, jobCancelFunc context.CancelFunc) { // Pass this job's specific context and token
 		jobStartTime := time.Now()
 		defer func() {
 			cg.mu.Lock()
-			if cg.currentCancelToken == tokenForThisJob {
+			// IMPORTANT: Only clear/nil out currentCancelFunc if it's STILL THIS job's cancel func.
+			// This prevents a new job's cancel func from being cleared by an old, finishing job.
+			if cg.currentCancelToken == jobToken {
 				cg.currentCancelFunc = nil
-				cg.currentCancelToken = nil
-				runtime.LogDebug(cg.app.ctx, "Cleared currentCancelFunc for completed/cancelled job (token match).")
+				cg.currentCancelToken = nil // Also clear the token
+				runtime.LogDebug(cg.app.ctx, fmt.Sprintf("Job (token: %p) completed/cancelled. Cleared currentCancelFunc & Token.", jobToken))
 			} else {
-				runtime.LogDebug(cg.app.ctx, "currentCancelFunc was replaced by a newer job (token mismatch); not clearing.")
+				runtime.LogDebug(cg.app.ctx, fmt.Sprintf("Job (token: %p) finished, but currentCancelToken (%p) belongs to a newer job. Not clearing.", jobToken, cg.currentCancelToken))
 			}
 			cg.mu.Unlock()
-			runtime.LogInfof(cg.app.ctx, "Shotgun context generation goroutine finished in %s", time.Since(jobStartTime))
+			runtime.LogInfof(cg.app.ctx, "Shotgun context generation goroutine (token: %p) finished in %s.", jobToken, time.Since(jobStartTime))
 		}()
 
-		if genCtx.Err() != nil {
-			runtime.LogInfo(cg.app.ctx, fmt.Sprintf("Context generation for multiple paths cancelled before starting: %v", genCtx.Err()))
-			runtime.EventsEmit(cg.app.ctx, "shotgunContextError", "Context generation was cancelled.") // Match FE event
+		// Initial check for cancellation. If jobCtx is already done, this job was cancelled
+		// very quickly after starting, likely by an immediate subsequent request.
+		select {
+		case <-jobCtx.Done():
+			runtime.LogInfo(cg.app.ctx, fmt.Sprintf("Context generation job (token: %p) was cancelled before significant work: %v", jobToken, jobCtx.Err()))
+			runtime.EventsEmit(cg.app.ctx, "shotgunContextError", "Context generation was cancelled (very early).")
 			return
+		default:
+			// Not cancelled yet, proceed
 		}
 
 		var outputBuilder strings.Builder
 		totalProjectsToProcess := len(projectPaths)
 		projectsProcessed := 0
 
-		for _, projectPath := range projectPaths {
+		for i, projectPath := range projectPaths {
+			// Check for cancellation before processing each project
 			select {
-			case <-genCtx.Done():
+			case <-jobCtx.Done():
+				runtime.LogInfo(cg.app.ctx, fmt.Sprintf("Context generation job (token: %p) cancelled during project processing (%d/%d): %v", jobToken, i, totalProjectsToProcess, jobCtx.Err()))
+				// Decide what to emit based on partial work
 				if outputBuilder.Len() > 0 {
 					outputBuilder.WriteString("\n*** Context generation was cancelled before completion. Output may be incomplete. ***")
 					runtime.EventsEmit(cg.app.ctx, "shotgunContextGenerated", outputBuilder.String())
 				} else {
 					runtime.EventsEmit(cg.app.ctx, "shotgunContextError", "Context generation was cancelled.")
 				}
-				return
+				return // Exit goroutine
 			default:
+				// Not cancelled, continue processing this project
 			}
 
-			if projectsProcessed > 0 { // Add separator if not the first project
+			if projectsProcessed > 0 {
 				outputBuilder.WriteString("\n\n")
 			}
 
 			projectName := filepath.Base(projectPath)
 			outputBuilder.WriteString(fmt.Sprintf("=== PROJECT: %s ===\n", projectName))
-			outputBuilder.WriteString(fmt.Sprintf("Project Root: %s\n\n", projectPath)) // Keep for clarity
+			outputBuilder.WriteString(fmt.Sprintf("Project Root: %s\n\n", projectPath))
 
-			// Create excludedMap FOR THIS project
 			excludedMap := make(map[string]bool)
 			if specificExclusions, ok := projectSpecificExcludedPaths[projectPath]; ok {
 				for _, relPath := range specificExclusions {
 					excludedMap[relPath] = true
 				}
 			} else {
-				// This case should ideally not happen if frontend sends data for all projects
 				runtime.LogWarningf(cg.app.ctx, "No exclusion list found for project %s. Assuming no exclusions for this project.", projectPath)
 			}
-			// The crucial fix: generateContextForSingleProject now gets a project-specific exclusion map
-			projectContent, _, _, err := cg.generateContextForSingleProject(genCtx, projectPath, excludedMap)
+
+			projectContent, _, _, err := cg.generateContextForSingleProject(jobCtx, projectPath, excludedMap) // Pass jobCtx
 			if err != nil {
-				// Handle error, maybe append an error message for this project to outputBuilder
-				outputBuilder.WriteString(fmt.Sprintf("ERROR processing project %s: %v\n", projectName, err))
-				// Decide if you want to continue with other projects or stop
+				// Check if the error was due to cancellation of this job's context
+				if errors.Is(err, context.Canceled) || errors.Is(err, ErrContextTooLong) { // ErrContextTooLong might also lead to early exit
+					runtime.LogInfo(cg.app.ctx, fmt.Sprintf("Sub-task for project %s (job token: %p) failed due to cancellation or limit: %v", projectName, jobToken, err))
+					// The outer loop's select should catch context.Canceled, but good to be robust.
+					// If it was ErrContextTooLong, append truncated message and potentially break or return.
+					if errors.Is(err, ErrContextTooLong) {
+						outputBuilder.WriteString(fmt.Sprintf("\n*** TRUNCATED for project %s: Context size limit reached. ***\n", projectName))
+						// Decide if we stop all generation or just this project
+						// For now, let's assume we might continue if other projects are small.
+						// Or, if a hard stop is preferred on first major error:
+						// runtime.EventsEmit(cg.app.ctx, "shotgunContextError", fmt.Sprintf("Error processing project %s: %v", projectName, err))
+						// return
+					}
+					// If it was purely context.Canceled, the loop's select will handle it.
+				} else {
+					// Other errors
+					outputBuilder.WriteString(fmt.Sprintf("ERROR processing project %s: %v\n", projectName, err))
+				}
 			} else {
 				if outputBuilder.Len()+len(projectContent) > maxOutputSizeBytes {
-					outputBuilder.WriteString("\n*** TRUNCATED: Context size limit reached for this project or overall. ***\n")
-					// Potentially break or just truncate this project's content
-					// If breaking, ensure any partially built output is handled (e.g. by emitting what we have)
-					break
+					outputBuilder.WriteString("\n*** TRUNCATED: Context size limit reached. ***\n")
+					break // Stop processing more projects if overall limit hit
 				}
 				outputBuilder.WriteString(projectContent)
 			}
@@ -1776,23 +1805,24 @@ func (cg *ContextGenerator) requestShotgunContextGenerationForMultiplePaths(proj
 			})
 		}
 
-		// Final check for cancellation after the loop
+		// Final check: if the loop completed, ensure the context wasn't cancelled right at the end
 		select {
-		case <-genCtx.Done():
-			if outputBuilder.Len() == 0 && projectsProcessed == 0 { // Cancelled before any processing
-				runtime.EventsEmit(cg.app.ctx, "shotgunContextError", "Context generation was cancelled.")
-				return
-			}
-			// If partially completed, append cancellation message
-			if projectsProcessed < totalProjectsToProcess {
+		case <-jobCtx.Done():
+			runtime.LogInfo(cg.app.ctx, fmt.Sprintf("Context generation (token: %p) cancelled just before final emit: %v", jobToken, jobCtx.Err()))
+			if outputBuilder.Len() > 0 && projectsProcessed < totalProjectsToProcess {
 				outputBuilder.WriteString("\n*** Context generation was cancelled before all projects were processed. Output may be incomplete. ***")
+				runtime.EventsEmit(cg.app.ctx, "shotgunContextGenerated", outputBuilder.String()) // Emit what we have
+			} else if outputBuilder.Len() == 0 { // Nothing processed, pure cancellation
+				runtime.EventsEmit(cg.app.ctx, "shotgunContextError", "Context generation was cancelled (final check).")
+			} else { // Processed all, but cancelled at the very end. Still emit the full result.
+				runtime.EventsEmit(cg.app.ctx, "shotgunContextGenerated", outputBuilder.String())
 			}
 		default:
-			// Normal completion
+			// Not cancelled, emit the full result
+			runtime.EventsEmit(cg.app.ctx, "shotgunContextGenerated", outputBuilder.String())
 		}
 
-		runtime.EventsEmit(cg.app.ctx, "shotgunContextGenerated", outputBuilder.String())
-	}(myToken)
+	}(genCtx, myToken, cancelThisJob) // Pass this job's specific context, token, and cancel func
 }
 
 // generateContextForSingleProject generates context for a single project path
