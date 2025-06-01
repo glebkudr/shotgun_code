@@ -1361,10 +1361,26 @@ func (a *App) generateShotgunOutputForMultipleProjects(jobCtx context.Context, p
 
 	var output strings.Builder
 	var fileContents strings.Builder
-
-	// Calculate total items across all projects for progress tracking
-	totalItems := 0
+	// Filter projects to only include those with content
+	var projectsWithContent []*Project
 	for _, project := range projects {
+		hasContent, err := a.hasIncludableContent(jobCtx, project)
+		if err != nil {
+			return "", fmt.Errorf("failed to check content for project %s: %w", project.Name, err)
+		}
+		if hasContent {
+			projectsWithContent = append(projectsWithContent, project)
+		}
+	}
+
+	// If no projects have content, return empty result
+	if len(projectsWithContent) == 0 {
+		return "", nil
+	}
+
+	// Calculate total items across projects with content for progress tracking
+	totalItems := 0
+	for _, project := range projectsWithContent {
 		excludedMap := project.ExcludedPaths
 		count, err := a.countProcessableItemsForProject(jobCtx, project, excludedMap)
 		if err != nil {
@@ -1375,9 +1391,8 @@ func (a *App) generateShotgunOutputForMultipleProjects(jobCtx context.Context, p
 
 	progressState := &generationProgressState{processedItems: 0, totalItems: totalItems}
 	a.emitProgress(progressState)
-
-	// Process each project
-	for i, project := range projects {
+	// Process each project with content
+	for i, project := range projectsWithContent {
 		if err := jobCtx.Err(); err != nil {
 			return "", err
 		}
@@ -1869,4 +1884,115 @@ func (cg *ContextGenerator) generateContextForSingleProject(ctx context.Context,
 
 	// The final output is the tree, a newline, then all concatenated file contents.
 	return output.String() + "\n" + strings.TrimRight(fileContents.String(), "\n"), fileCount, totalSize, nil
+}
+
+// hasIncludableContent checks if a project has any files that would be included in the output
+func (a *App) hasIncludableContent(jobCtx context.Context, project *Project) (bool, error) {
+	var hasContent bool
+	
+	var checkHelper func(currentPath string) error
+	checkHelper = func(currentPath string) error {
+		if hasContent {
+			return nil // Early exit if we already found content
+		}
+		
+		select {
+		case <-jobCtx.Done():
+			return jobCtx.Err()
+		default:
+		}
+
+		entries, err := os.ReadDir(currentPath)
+		if err != nil {
+			runtime.LogWarningf(a.ctx, "hasIncludableContent: error reading dir %s: %v", currentPath, err)
+			return nil
+		}
+
+		for _, entry := range entries {
+			if hasContent {
+				return nil // Early exit if we already found content
+			}
+			
+			path := filepath.Join(currentPath, entry.Name())
+			relPath, _ := filepath.Rel(project.RootPath, path)
+
+			// Check if excluded by user
+			if project.ExcludedPaths[relPath] {
+				continue
+			}
+
+			// Check ignore rules
+			isGitignored := false
+			isCustomIgnored := false
+			pathToMatch := relPath
+			if entry.IsDir() {
+				if !strings.HasSuffix(pathToMatch, string(os.PathSeparator)) {
+					pathToMatch += string(os.PathSeparator)
+				}
+			}
+
+			if project.Gitignore != nil && a.useGitignore {
+				isGitignored = project.Gitignore.MatchesPath(pathToMatch)
+			}
+			if a.currentCustomIgnorePatterns != nil && a.useCustomIgnore {
+				isCustomIgnored = a.currentCustomIgnorePatterns.MatchesPath(pathToMatch)
+			}
+
+			if isGitignored || isCustomIgnored {
+				continue
+			}
+
+			// If we reach here, we found includable content
+			hasContent = true
+			return nil
+		}
+		
+		// Check subdirectories
+		for _, entry := range entries {
+			if hasContent {
+				return nil // Early exit if we already found content
+			}
+			
+			if entry.IsDir() {
+				path := filepath.Join(currentPath, entry.Name())
+				relPath, _ := filepath.Rel(project.RootPath, path)
+
+				// Check if excluded by user
+				if project.ExcludedPaths[relPath] {
+					continue
+				}
+
+				// Check ignore rules
+				pathToMatch := relPath
+				if !strings.HasSuffix(pathToMatch, string(os.PathSeparator)) {
+					pathToMatch += string(os.PathSeparator)
+				}
+
+				isGitignored := false
+				isCustomIgnored := false
+				if project.Gitignore != nil && a.useGitignore {
+					isGitignored = project.Gitignore.MatchesPath(pathToMatch)
+				}
+				if a.currentCustomIgnorePatterns != nil && a.useCustomIgnore {
+					isCustomIgnored = a.currentCustomIgnorePatterns.MatchesPath(pathToMatch)
+				}
+
+				if !isGitignored && !isCustomIgnored {
+					err := checkHelper(path)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+		
+		return nil
+	}
+
+	err := checkHelper(project.RootPath)
+	if err != nil {
+		return false, err
+	}
+	
+	return hasContent, nil
 }

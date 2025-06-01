@@ -233,6 +233,9 @@ function toggleExcludeNode(nodeToToggle) {
   }
   manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
   addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
+  
+  // Trigger context regeneration to reflect the change immediately
+  debouncedTriggerShotgunContextGeneration();
 }
 
 function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-facing function
