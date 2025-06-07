@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"bytes"
+	"net/http"
 
 	"github.com/adrg/xdg"
 	"github.com/fsnotify/fsnotify"
@@ -962,6 +964,105 @@ func (a *App) SetCustomIgnoreRules(rules string) error {
 		return a.fileWatcher.RefreshIgnoresAndRescan()
 	}
 	return nil
+}
+
+// --- OpenRouter API ---
+
+// OpenRouterMessage defines the structure for messages in the OpenRouter API request.
+type OpenRouterMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// OpenRouterRequest defines the structure for the OpenRouter API request.
+type OpenRouterRequest struct {
+	Model    string              `json:"model"`
+	Messages []OpenRouterMessage `json:"messages"`
+}
+
+// OpenRouterChoice defines the structure for a choice in the OpenRouter API response.
+type OpenRouterChoice struct {
+	Message OpenRouterMessage `json:"message"`
+}
+
+// OpenRouterResponse defines the structure for the OpenRouter API response.
+type OpenRouterResponse struct {
+	ID      string             `json:"id,omitempty"`
+	Choices []OpenRouterChoice `json:"choices"`
+	Usage   struct {
+		PromptTokens     int `json:"prompt_tokens,omitempty"`
+		CompletionTokens int `json:"completion_tokens,omitempty"`
+		TotalTokens      int `json:"total_tokens,omitempty"`
+	} `json:"usage,omitempty"`
+}
+
+// CallOpenRouter sends a request to the OpenRouter API and returns the content of the first choice.
+func (a *App) CallOpenRouter(apiKey string, modelName string, diffContent string, systemPrompt string) (string, error) {
+	runtime.LogInfof(a.ctx, "CallOpenRouter called with model: %s", modelName)
+
+	if apiKey == "" {
+		return "", errors.New("API key is missing")
+	}
+	if modelName == "" {
+		return "", errors.New("model name is missing")
+	}
+	// diffContent can be empty if it's not a diff-related call.
+	// systemPrompt can be empty if default is desired by the caller.
+
+	requestPayload := OpenRouterRequest{
+		Model: modelName,
+		Messages: []OpenRouterMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: diffContent},
+		},
+	}
+
+	payloadBytes, err := json.Marshal(requestPayload)
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Error marshalling OpenRouter request: %v", err)
+		return "", fmt.Errorf("error marshalling request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(a.ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Error creating OpenRouter request: %v", err)
+		return "", fmt.Errorf("error creating request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HTTP-Referer", "shotgun-app") // Optional, as per documentation
+	req.Header.Set("X-Title", "shotgun-app")       // Optional, as per documentation
+
+	client := &http.Client{Timeout: 60 * time.Second} // Consider making timeout configurable
+	resp, err := client.Do(req)
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Error sending request to OpenRouter: %v", err)
+		return "", fmt.Errorf("error sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := os.ReadAll(resp.Body) // Read body for error context
+		errMsg := fmt.Sprintf("OpenRouter API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		runtime.LogErrorf(a.ctx, errMsg)
+		return "", errors.New(errMsg)
+	}
+
+	var openRouterResponse OpenRouterResponse
+	if err := json.NewDecoder(resp.Body).Decode(&openRouterResponse); err != nil {
+		runtime.LogErrorf(a.ctx, "Error unmarshalling OpenRouter response: %v", err)
+		return "", fmt.Errorf("error unmarshalling response: %w", err)
+	}
+
+	if len(openRouterResponse.Choices) == 0 {
+		runtime.LogWarningf(a.ctx, "OpenRouter response contained no choices. Full response: %+v", openRouterResponse)
+		return "", errors.New("no choices found in OpenRouter response")
+	}
+
+	content := openRouterResponse.Choices[0].Message.Content
+	runtime.LogInfof(a.ctx, "Successfully received response from OpenRouter. Content length: %d", len(content))
+	return content, nil
 }
 
 // GetCustomPromptRules returns the current custom prompt rules as a string.

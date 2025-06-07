@@ -13,6 +13,7 @@ import Step1CopyStructure from './steps/Step1PrepareContext.vue';
 import Step2ComposePrompt from './steps/Step2ComposePrompt.vue';
 import Step3ExecutePrompt from './steps/Step3ExecutePrompt.vue';
 import Step4ApplyPatch from './steps/Step4ApplyPatch.vue';
+import OpenRouterPanel from './OpenRouterPanel.vue'; // Import the new panel
 
 const props = defineProps({
   currentStep: { type: Number, required: true },

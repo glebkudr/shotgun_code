@@ -55,6 +55,8 @@ import HorizontalStepper from './HorizontalStepper.vue';
 import LeftSidebar from './LeftSidebar.vue';
 import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
+// OpenRouterPanel is rendered by CentralPanel, but importing here for clarity on the new step
+import OpenRouterPanel from './OpenRouterPanel.vue';
 import { ListFiles, RequestShotgunContextGeneration, SelectDirectory as SelectDirectoryGo, StartFileWatcher, StopFileWatcher, SetUseGitignore, SetUseCustomIgnore, SplitShotgunDiff } from '../../wailsjs/go/main/App';
 import { EventsOn, Environment } from '../../wailsjs/runtime/runtime';
 
@@ -64,6 +66,7 @@ const steps = ref([
   { id: 2, title: 'Compose Prompt', completed: false, description: 'Provide a prompt to the LLM based on the project context to generate a code diff.' },
   { id: 3, title: 'Execute Prompt', completed: false, description: 'Paste a large shotgunDiff and split it into smaller, manageable parts.' },
   { id: 4, title: 'Apply Patch', completed: false, description: 'Copy and apply the smaller diff parts to your project.' },
+  { id: 5, title: 'Get Suggestions', completed: false, description: 'Use OpenRouter API to get suggestions on your diff.' },
 ]);
 
 const logMessages = ref([]);
@@ -444,6 +447,21 @@ async function handleStepAction(actionName, payload) {
     case 'finishSplitting':
       addLog("Finished with split diffs.", 'info', 'bottom');
       if (currentStepObj) currentStepObj.completed = true;
+      // Potentially navigate to step 5 if it's the next logical step
+      // For now, user clicks to navigate or it's handled by completing step 3/4
+      break;
+    case 'openRouterSuggestionsObtained':
+      addLog("OpenRouter suggestions obtained.", "success", "bottom");
+      if (currentStep.value === 5) { // Ensure we are on the correct step
+        const step5 = steps.value.find(s => s.id === 5);
+        if (step5) step5.completed = true;
+        // addLog(`Suggestions: ${payload}`, 'debug', 'bottom'); // Payload might be large
+      }
+      // Decide if we navigate to another step or stay
+      break;
+    case 'openRouterSuggestionsError':
+      addLog(`OpenRouter error: ${payload}`, "error", "bottom");
+      // Step 5 remains incomplete
       break;
     default:
       addLog(`Unknown action: ${actionName}`, 'error', 'bottom');
