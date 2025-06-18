@@ -1,62 +1,135 @@
 <template>
-  <div class="flex flex-col h-screen bg-gray-100">
-    <HorizontalStepper :current-step="currentStep" :steps="steps" @navigate="navigateToStep" :key="`hstepper-${currentStep}-${steps.map(s=>s.completed).join('')}`" />
+  <div class="flex flex-col h-screen w-screen bg-primary overflow-hidden">
+    <!-- Message Box for notifications -->
+    <MessageBox :messages="notificationMessages" />
+    
+    <!-- Settings Modal -->
+    <Settings :is-visible="isSettingsVisible" @close="toggleSettings" />
+    <!-- Top Bar -->
+    <TopBar 
+      @toggle-settings="toggleSettings" 
+      @toggle-left-sidebar="toggleLeftSidebar"
+      :left-sidebar-state="leftSidebarState"
+    />
+    
     <div class="flex flex-1 overflow-hidden">
+      <!-- Left Sidebar - Navigation Only -->
       <LeftSidebar 
         :current-step="currentStep" 
         :steps="steps" 
+        :width="leftSidebarWidth"
+        @navigate="navigateToStep" 
+        @resize="handleLeftSidebarResize"
+      />
+      <!-- Central Panel -->
+      <CentralPanel 
+        :current-step="currentStep" 
+        :shotgun-prompt-context="shotgunPromptContext"
+        :file-structure-context="fileStructureContext"
+        :generation-progress="generationProgressData"
+        :is-generating-context="isGeneratingContext"
+        :project-root="projectRoot" 
+        :platform="platform"
+        :user-task="userTask"
+        :rules-content="rulesContent"
+        :split-diffs="splitDiffs"
+        :is-loading-split-diffs="isLoadingSplitDiffs"
+        :final-prompt="finalPrompt"
+        :split-line-limit-value="splitLineLimitValue"
+        :shotgun-git-diff="shotgunGitDiff"
+        :selected-template="selectedTemplate"
+        @step-action="handleStepAction"
+        @update-composed-prompt="handleComposedPromptUpdate"
+        @update:user-task="handleUserTaskUpdate"
+        @update:rules-content="handleRulesContentUpdate"
+        @update:shotgunGitDiff="handleShotgunGitDiffUpdate"
+        @update:splitLineLimit="handleSplitLineLimitUpdate"
+        ref="centralPanelRef" 
+        class="flex-1"
+      />
+      
+      <!-- Right Sidebar - Context Sensitive -->
+      <RightSidebar
+        :current-step="currentStep"
         :project-root="projectRoot"
         :file-tree-nodes="fileTree"
         :use-gitignore="useGitignore"
         :use-custom-ignore="useCustomIgnore"
         :loading-error="loadingError"
-        @navigate="navigateToStep"
+        :rules-content="rulesContent"
+        :final-prompt="finalPrompt"
+        :selected-template="selectedTemplate"
+        :width="rightSidebarWidth"
         @select-folder="selectProjectFolderHandler"
         @toggle-gitignore="toggleGitignoreHandler"
         @toggle-custom-ignore="toggleCustomIgnoreHandler"
         @toggle-exclude="toggleExcludeNode"
         @custom-rules-updated="handleCustomRulesUpdated"
-        @add-log="({message, type}) => addLog(message, type)" />
-      <CentralPanel :current-step="currentStep" 
-                    :shotgun-prompt-context="shotgunPromptContext"
-                    :generation-progress="generationProgressData"
-                    :is-generating-context="isGeneratingContext"
-                    :project-root="projectRoot" 
-                    :platform="platform"
-                    :user-task="userTask"
-                    :rules-content="rulesContent"
-                    :split-diffs="splitDiffs"
-                    :is-loading-split-diffs="isLoadingSplitDiffs"
-                    :final-prompt="finalPrompt"
-                    :split-line-limit="splitLineLimitValue"
-                    :shotgun-git-diff="shotgunGitDiff"
-                    :split-line-limit-value="splitLineLimitValue"
-                    @step-action="handleStepAction"
-                    @update-composed-prompt="handleComposedPromptUpdate"
-                    @update:user-task="handleUserTaskUpdate"
-                    @update:rules-content="handleRulesContentUpdate"
-                    @update:shotgunGitDiff="handleShotgunGitDiffUpdate"
-                    @update:splitLineLimit="handleSplitLineLimitUpdate"
-                    ref="centralPanelRef" />
+        @template-change="handleTemplateChange"
+        @update:rules-content="handleRulesContentUpdate"
+        @step-completed="handleStepCompletion"
+        @resize="handleRightSidebarResize"
+      />
     </div>
     <div 
+      v-if="isConsoleVisible"
       @mousedown="startResize"
-      class="w-full h-2 bg-gray-300 hover:bg-gray-400 cursor-row-resize select-none"
+      class="console-resize-handle"
       title="Resize console height"
-    >
+    ></div>
+    <div class="status-bar">
+      <div class="status-item" v-if="currentStep >= 2">
+        <span class="status-item-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+          </svg>
+        </span>
+        <span class="token-counter">
+          <span class="font-normal">Token: </span> 
+          <span class="font-medium">{{ approximateTokens }}</span>
+          <span class="text-xs text-hint ml-2">(approximation)</span>
+        </span>
+      </div>
+      <div v-else class="status-item">
+        <span class="status-item-icon status-item-warning">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </span>
+        <span>No prompt composed yet</span>
+      </div>
+
+      <div class="flex-grow"></div>
+
+      <button 
+        @click="toggleConsole" 
+        class="status-item"
+        :title="isConsoleVisible ? 'Hide console' : 'Show console'"
+      >
+        <span class="status-item-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" :class="{'transform rotate-180': !isConsoleVisible}">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </span>
+        <span>{{ isConsoleVisible ? 'Hide Console' : 'Show Console' }}</span>
+      </button>
     </div>
-    <BottomConsole :log-messages="logMessages" :height="consoleHeight" ref="bottomConsoleRef" />
+    <BottomConsole v-if="isConsoleVisible" :log-messages="logMessages" :height="consoleHeight" ref="bottomConsoleRef" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import HorizontalStepper from './HorizontalStepper.vue';
+import { ref, reactive, watch, onMounted, onBeforeUnmount, nextTick, computed } from 'vue';
 import LeftSidebar from './LeftSidebar.vue';
 import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
+import TopBar from './TopBar.vue';
+import RightSidebar from './RightSidebar.vue';
+import MessageBox from './MessageBox.vue';
+import Settings from './Settings.vue';
 import { ListFiles, RequestShotgunContextGeneration, SelectDirectory as SelectDirectoryGo, StartFileWatcher, StopFileWatcher, SetUseGitignore, SetUseCustomIgnore, SplitShotgunDiff } from '../../wailsjs/go/main/App';
 import { EventsOn, Environment } from '../../wailsjs/runtime/runtime';
+import themeStore from '../theme.js';
 
 const currentStep = ref(1);
 const steps = ref([
@@ -67,10 +140,13 @@ const steps = ref([
 ]);
 
 const logMessages = ref([]);
+const notificationMessages = ref([]);
 const centralPanelRef = ref(null); 
 const bottomConsoleRef = ref(null);
-const MIN_CONSOLE_HEIGHT = 50;
-const consoleHeight = ref(MIN_CONSOLE_HEIGHT); // Initial height in pixels
+const consoleMinHeight = 50;
+const consoleHeight = ref(parseInt(localStorage.getItem('shotgun-console-height')) || 150);
+const isConsoleVisible = ref(false);
+const isSettingsVisible = ref(false);
 
 function addLog(message, type = 'info', targetConsole = 'bottom') {
   const logEntry = {
@@ -87,11 +163,22 @@ function addLog(message, type = 'info', targetConsole = 'bottom') {
       centralPanelRef.value.addLogToStep3Console(message, type);
     }
   }
+  
+  // Add message to notification system
+  // We only keep the most recent message in the array
+  // The MessageBox component will only display the most recent one
+  notificationMessages.value = [logEntry];
+  
+  // After a short delay, clear the notification messages array
+  setTimeout(() => {
+    notificationMessages.value = [];
+  }, 3000);
 }
 
 const projectRoot = ref('');
 const fileTree = ref([]);
 const shotgunPromptContext = ref('');
+const fileStructureContext = ref('');
 const loadingError = ref('');
 const useGitignore = ref(true);
 const useCustomIgnore = ref(true);
@@ -99,16 +186,42 @@ const manuallyToggledNodes = reactive(new Map());
 const isGeneratingContext = ref(false);
 const generationProgressData = ref({ current: 0, total: 0 });
 const isFileTreeLoading = ref(false);
-const composedLlmPrompt = ref(''); // To store the prompt from Step 2
-const platform = ref('unknown'); // To store OS platform (e.g., 'darwin', 'windows', 'linux')
+const composedLlmPrompt = ref('');
+const platform = ref('unknown');
 const userTask = ref('');
 const rulesContent = ref('');
 const finalPrompt = ref('');
 const isLoadingSplitDiffs = ref(false);
 const splitDiffs = ref([]);
 const shotgunGitDiff = ref('');
-const splitLineLimitValue = ref(0); // Add new state variable
+const splitLineLimitValue = ref(0);
+const rightSidebarWidth = ref(parseInt(localStorage.getItem('shotgun-right-sidebar-width')) || 250);
+const leftSidebarWidth = ref(parseInt(localStorage.getItem('shotgun-left-sidebar-width')) || 250);
+const leftSidebarState = ref(parseInt(localStorage.getItem('shotgun-left-sidebar-state')) || 2);
+const isResizing = ref(false);
+const startX = ref(0);
+const startWidth = ref(0);
+const selectedTemplate = ref('dev');
+let isExcludedStateChanging = false;
 let debounceTimer = null;
+
+// Token count calculation
+const approximateTokens = computed(() => {
+  const combinedText = `${userTask.value || ''} ${finalPrompt.value || ''}`.trim();
+  const tokens = Math.round(combinedText.length / 3);
+  return tokens.toLocaleString();
+});
+
+const charCountColorClass = computed(() => {
+  const count = charCount.value;
+  if (count < 1000000) {
+    return 'text-success';
+  } else if (count <= 4000000) {
+    return 'text-warning';
+  } else {
+    return 'text-error';
+  }
+});
 
 // Watcher related
 const projectFilesChangedPendingReload = ref(false);
@@ -116,27 +229,42 @@ let unlistenProjectFilesChanged = null;
 
 async function selectProjectFolderHandler() {
   isFileTreeLoading.value = true;
-  try {
-    shotgunPromptContext.value = '';
-    isGeneratingContext.value = false;
+  try {  
     const selectedDir = await SelectDirectoryGo(); 
     if (selectedDir) {
-      projectRoot.value = selectedDir;
-      loadingError.value = '';
-      manuallyToggledNodes.clear();
-      fileTree.value = [];
-      
-      await loadFileTree(selectedDir);
+      if (selectedDir !== projectRoot.value) {
+        shotgunPromptContext.value = '';
+        fileStructureContext.value = '';
+        finalPrompt.value = '';
+        userTask.value = '';
+        isGeneratingContext.value = false;
+        generationProgressData.value = { current: 0, total: 0 };
+        
+        steps.value.forEach(step => {
+          step.completed = false;
+        });
+        
+        projectRoot.value = selectedDir;
+        loadingError.value = '';
+        manuallyToggledNodes.clear();
+        fileTree.value = [];
+        splitDiffs.value = []; 
 
-      splitDiffs.value = []; // Clear any previous splits when new project selected
+        await loadFileTree(selectedDir);
 
-      if (!isFileTreeLoading.value && projectRoot.value) {
-         debouncedTriggerShotgunContextGeneration();
+        if (!isFileTreeLoading.value) {
+           addLog('Triggering context generation for new project', 'info', 'bottom');
+           await debouncedTriggerShotgunContextGeneration();
+        }
+
+        addLog(`New project folder selected: ${selectedDir}`, 'info', 'bottom');
+      } else {
+        addLog(`Same project folder selected again: ${selectedDir}`, 'info', 'bottom');
       }
-
-      steps.value.forEach(s => s.completed = false);
-      currentStep.value = 1;
-      addLog(`Project folder selected: ${selectedDir}`, 'info', 'bottom');
+      
+      if (currentStep.value !== 1) {
+        currentStep.value = 1;
+      }
     } else {
       isFileTreeLoading.value = false;
     }
@@ -202,7 +330,7 @@ function isAnyParentVisuallyExcluded(node) {
   }
   let current = node.parent;
   while (current) {
-    if (current.excluded) { // current.excluded reflects its visual/checkbox state
+    if (current.excluded) {
       return true;
     }
     current = current.parent;
@@ -211,20 +339,19 @@ function isAnyParentVisuallyExcluded(node) {
 }
 
 function toggleExcludeNode(nodeToToggle) {
-  // If the node is under an unselected parent and is currently unselected itself (nodeToToggle.excluded is true),
-  // the first click should select it (set nodeToToggle.excluded to false).
   if (isAnyParentVisuallyExcluded(nodeToToggle) && nodeToToggle.excluded) {
     nodeToToggle.excluded = false;
   } else {
-    // Otherwise, normal toggle behavior.
     nodeToToggle.excluded = !nodeToToggle.excluded;
   }
   manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
   addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
+  
+  isExcludedStateChanging = true;
+  regenerateContextIfNeeded();
 }
 
-function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-facing function
-  // It calls the recursive helper, starting with parentIsVisuallyExcluded = false for root nodes.
+function updateAllNodesExcludedState(nodesToUpdate) {
   _updateAllNodesExcludedStateRecursive(nodesToUpdate, false);
 }
 
@@ -237,16 +364,13 @@ function _updateAllNodesExcludedStateRecursive(nodesToUpdate, parentIsVisuallyEx
     if (useCustomIgnore.value && node.isCustomIgnored) isExcludedByRule = true;
 
     if (manualToggle !== undefined) {
-      // If there's a manual toggle, it dictates the state.
       node.excluded = manualToggle;
     } else {
-      // If not manually toggled, it's excluded if a rule matches OR if its parent is visually excluded.
-      // This establishes the default inherited exclusion for visual purposes.
       node.excluded = isExcludedByRule || parentIsVisuallyExcluded;
     }
 
      if (node.children && node.children.length > 0) {
-      _updateAllNodesExcludedStateRecursive(node.children, node.excluded); // Pass current node's new visual excluded state
+      _updateAllNodesExcludedStateRecursive(node.children, node.excluded);
      }
    });
  }
@@ -257,8 +381,6 @@ function toggleGitignoreHandler(value) {
   SetUseGitignore(value)
     .then(() => addLog(`Watchman instructed to use .gitignore: ${value}`, 'debug'))
     .catch(err => addLog(`Error setting useGitignore in backend: ${err}`, 'error'));
-  // Context regeneration is handled by the watch on [fileTree, useGitignore, useCustomIgnore]
-  // which calls updateAllNodesExcludedState and debouncedTriggerShotgunContextGeneration.
 }
 
 function toggleCustomIgnoreHandler(value) {
@@ -271,13 +393,13 @@ function toggleCustomIgnoreHandler(value) {
 
 function debouncedTriggerShotgunContextGeneration() {
   if (!projectRoot.value) {
-    // Clear context and stop loading if no project root
-    shotgunPromptContext.value = ''; // Clear previous context
-    generationProgressData.value = { current: 0, total: 0 }; // Reset progress
-    // isGeneratingContext will be set to false by the return or by the timeout if it runs
+    shotgunPromptContext.value = '';
+    generationProgressData.value = { current: 0, total: 0 }; 
     isGeneratingContext.value = false;
     return;
   }
+  
+  shotgunPromptContext.value = '';
 
   if (isFileTreeLoading.value) {
     addLog("Debounced trigger skipped: file tree is loading.", 'debug', 'bottom');
@@ -302,20 +424,19 @@ function debouncedTriggerShotgunContextGeneration() {
     addLog("Debounced trigger: Requesting shotgun context generation...", 'info');
     
     updateAllNodesExcludedState(fileTree.value);
-    generationProgressData.value = { current: 0, total: 0 }; // Reset progress before new request
+    generationProgressData.value = { current: 0, total: 0 }; 
 
     const excludedPathsArray = [];
     
-    // Helper to determine if a node has any visually included (checkbox checked) descendants
     function hasVisuallyIncludedDescendant(node) {
       if (!node.isDir || !node.children || node.children.length === 0) {
         return false;
       }
       for (const child of node.children) {
-        if (!child.excluded) { // If child itself is visually included (checkbox is checked)
+        if (!child.excluded) {
           return true;
         }
-        if (hasVisuallyIncludedDescendant(child)) { // Or if any of its descendants are
+        if (hasVisuallyIncludedDescendant(child)) { 
           return true;
         }
       }
@@ -325,16 +446,9 @@ function debouncedTriggerShotgunContextGeneration() {
     function collectTrulyExcludedPaths(nodes) {
        if (!nodes) return;
        nodes.forEach(node => {
-        // A node is TRULY excluded if its checkbox is unchecked (node.excluded is true)
-        // AND it does not have any descendant that is checked (visually included).
         if (node.excluded && !hasVisuallyIncludedDescendant(node)) {
           excludedPathsArray.push(node.relPath);
-          // If a node is truly excluded, its children are implicitly excluded from generation,
-          // so no need to recurse further for collecting excluded paths under this node.
         } else {
-          // If the node is visually included OR it's visually excluded but has an included descendant
-          // (meaning this node's path needs to be in the tree structure for its descendant),
-          // then we must check its children for their own exclusion status.
           if (node.children && node.children.length > 0) {
             collectTrulyExcludedPaths(node.children);
           }
@@ -356,19 +470,50 @@ function debouncedTriggerShotgunContextGeneration() {
 }
 
 function navigateToStep(stepId) {
-  const targetStep = steps.value.find(s => s.id === stepId);
-  if (!targetStep) return;
-
-  if (targetStep.completed || stepId === currentStep.value) {
+  if (stepId < currentStep.value) {
+    steps.value.forEach(step => {
+      if (step.id > stepId && step.completed) {
+        step.completed = false;
+        addLog(`Reset step ${step.id} completion status`, 'info', 'bottom');
+      }
+    });
+    
     currentStep.value = stepId;
     return;
   }
 
+  if (stepId === 2) {
+    if (!projectRoot.value) {
+      addLog("Cannot proceed to Step 2: No project folder selected.", 'error');
+      return;
+    }
+    
+    if (!shotgunPromptContext.value) {
+      addLog("Project folder selected but context not generated. Generating context...", 'info');
+      debouncedTriggerShotgunContextGeneration();
+    }
+
+    fileStructureContext.value = shotgunPromptContext.value || '';
+  }
+
   const firstUncompletedStep = steps.value.find(s => !s.completed);
   if (!firstUncompletedStep || stepId === firstUncompletedStep.id) {
+    const previousStep = currentStep.value;
     currentStep.value = stepId;
+
+    if (stepId > previousStep) {
+      nextTick(() => {
+        if (stepId === 2 && centralPanelRef.value?.step2Ref?.checkCompletion) {
+          centralPanelRef.value.step2Ref.checkCompletion();
+        } else if (stepId === 3 && centralPanelRef.value?.step3Ref?.checkCompletion) {
+          centralPanelRef.value.step3Ref.checkCompletion();
+        } else if (stepId === 4 && centralPanelRef.value?.step4Ref?.checkCompletion) {
+          centralPanelRef.value.step4Ref.checkCompletion();
+        }
+      });
+    }
   } else {
-    addLog(`Cannot navigate to step ${stepId} yet. Please complete step ${firstUncompletedStep.id}.`, 'warn');
+    addLog(`Cannot skip to step ${stepId}. Complete step ${firstUncompletedStep.id} first.`, 'warn');
   }
 }
 
@@ -376,7 +521,6 @@ function handleComposedPromptUpdate(prompt) {
   composedLlmPrompt.value = prompt;
   finalPrompt.value = prompt;
   addLog(`MainLayout: Composed LLM prompt updated (${prompt.length} chars).`, 'debug', 'bottom');
-  // Logic to mark step 2 as complete can go here
   if (currentStep.value === 2 && prompt && steps.value[0].completed) {
     const step2 = steps.value.find(s => s.id === 2);
     if (step2 && !step2.completed) {
@@ -393,32 +537,24 @@ async function handleStepAction(actionName, payload) {
   }
 
   const currentStepObj = steps.value.find(s => s.id === currentStep.value);
-
+  
   switch (actionName) {
+    case 'generateShotgunContext':
+      debouncedTriggerShotgunContextGeneration();
+      break;
     case 'executePrompt':
-      if (!composedLlmPrompt.value) {
-        addLog("Cannot execute prompt: Prompt from Step 2 is empty.", 'warn', 'both');
-        return;
-      }
-      addLog(`Simulating backend: Executing prompt (LLM call)... \nPrompt Preview (first 100 chars): "${composedLlmPrompt.value.substring(0,100)}..."`, 'info', 'step');
-      // Here, you would actually send composedLlmPrompt.value to an LLM
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      addLog('Backend: LLM call simulated. (Mocked response/diff would be processed here).', 'info', 'step');
-      if (currentStepObj) currentStepObj.completed = true;
-      // For now, just navigate to Step 4, as Step 3's "execution" is conceptual.
-      // In a real app, Step 3 might display LLM output before proceeding.
       navigateToStep(4); 
       break;
-    case 'executePromptAndSplitDiff': // Handle the actual splitting action
+    case 'executePromptAndSplitDiff':
       if (!payload || !payload.gitDiff || payload.lineLimit <= 0) {
         addLog("Invalid payload for splitting diff.", 'error', 'bottom');
         return;
       }
       addLog(`Splitting diff (approx ${payload.lineLimit} lines per split)...`, 'info', 'bottom');
       isLoadingSplitDiffs.value = true;
-      splitDiffs.value = []; // Clear previous splits
+      splitDiffs.value = [];
       shotgunGitDiff.value = payload.gitDiff;
-      splitLineLimitValue.value = payload.lineLimit; // Store the line limit
+      splitLineLimitValue.value = payload.lineLimit;
       try {
         const result = await SplitShotgunDiff(payload.gitDiff, payload.lineLimit);
         splitDiffs.value = result;
@@ -426,7 +562,6 @@ async function handleStepAction(actionName, payload) {
         
         if (currentStepObj) currentStepObj.completed = true;
         navigateToStep(4);
-
       } catch (err) {
         const errorMsg = `Error splitting diff: ${err.message || err}`;
         addLog(errorMsg, 'error', 'bottom');
@@ -450,10 +585,21 @@ async function handleStepAction(actionName, payload) {
   }
 }
 
-const isResizing = ref(false);
+const tempConsoleHeight = ref(0);
+
+
+function toggleConsole() {
+  isConsoleVisible.value = !isConsoleVisible.value;
+  
+  if (isConsoleVisible.value && consoleHeight.value <= consoleMinHeight) {
+    consoleHeight.value = 150;
+  }
+}
 
 function startResize(event) {
   isResizing.value = true;
+  tempConsoleHeight.value = consoleHeight.value;
+  document.documentElement.classList.add('resize-transition-paused');
   document.addEventListener('mousemove', doResize);
   document.addEventListener('mouseup', stopResize);
   event.preventDefault(); 
@@ -462,21 +608,97 @@ function startResize(event) {
 function doResize(event) {
   if (!isResizing.value) return;
   const newHeight = window.innerHeight - event.clientY;
-  const minHeight = MIN_CONSOLE_HEIGHT;
+  const minHeight = consoleMinHeight;
   const maxHeight = window.innerHeight * 0.7;
+  
   consoleHeight.value = Math.max(minHeight, Math.min(newHeight, maxHeight));
+  tempConsoleHeight.value = consoleHeight.value;
 }
 
 function stopResize() {
   isResizing.value = false;
+  document.documentElement.classList.remove('resize-transition-paused');
   document.removeEventListener('mousemove', doResize);
   document.removeEventListener('mouseup', stopResize);
+  localStorage.setItem('shotgun-console-height', consoleHeight.value);
+}
+
+function handleLeftSidebarResize(newWidth) {
+  leftSidebarWidth.value = newWidth;
+  localStorage.setItem('shotgun-left-sidebar-width', newWidth);
+  
+  if (newWidth === 0) {
+    leftSidebarState.value = 0; 
+  } else if (newWidth >= 0 && newWidth < 140) {
+    leftSidebarState.value = 1; 
+  } else {
+    leftSidebarState.value = 2;
+  }
+  
+  localStorage.setItem('shotgun-left-sidebar-state', leftSidebarState.value);
+}
+
+function handleRightSidebarResize(newWidth) {
+  rightSidebarWidth.value = newWidth;
+  localStorage.setItem('shotgun-right-sidebar-width', newWidth);
+}
+
+let resizeTimer = null;
+
+function handleWindowResize() {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  
+  resizeTimer = setTimeout(() => {
+    const windowWidth = window.innerWidth;
+    
+    if (windowWidth < 768 && leftSidebarState.value === 2 && leftSidebarWidth.value > 140) {
+      leftSidebarState.value = 1;
+      leftSidebarWidth.value = previousWidths[1];
+      localStorage.setItem('shotgun-left-sidebar-state', leftSidebarState.value);
+      localStorage.setItem('shotgun-left-sidebar-width', leftSidebarWidth.value);
+    }
+    
+    if (windowWidth < 480 && leftSidebarState.value > 0) {
+      leftSidebarState.value = 0;
+      leftSidebarWidth.value = 0;
+      localStorage.setItem('shotgun-left-sidebar-state', leftSidebarState.value);
+      localStorage.setItem('shotgun-left-sidebar-width', leftSidebarWidth.value);
+    }
+  }, 100);
+}
+
+function handleKeyNavigation(event) {
+  if (event.key >= '1' && event.key <= '4') {
+    const stepId = parseInt(event.key);
+    const step = steps.value.find(s => s.id === stepId);
+    if (step && (stepId === currentStep.value || stepId === 2 || stepId === 3 || stepId === 4 || (step && step.completed))) {
+      navigateToStep(stepId);
+    }
+  }
+  if (event.key === 'ArrowDown') {
+    navigateToStep(currentStep.value + 1);
+  } else if (event.key === 'ArrowUp') {
+    if (currentStep.value > 1) {
+      navigateToStep(currentStep.value - 1);
+    }
+  }
 }
 
 onMounted(() => {
+  window.addEventListener('resize', handleWindowResize);
+  window.addEventListener('keydown', handleKeyNavigation);
+  handleWindowResize();
+  
+  const savedRules = localStorage.getItem('shotgun-rules-content');
+  if (savedRules) {
+    rulesContent.value = savedRules;
+    addLog('Loaded custom rules from local storage', 'debug', 'bottom');
+  }
+
   EventsOn("shotgunContextGenerated", (output) => {
     addLog("Wails event: shotgunContextGenerated RECEIVED", 'debug', 'bottom');
     shotgunPromptContext.value = output;
+    fileStructureContext.value = output;
     isGeneratingContext.value = false;
     addLog(`Shotgun context updated (${output.length} chars).`, 'success');
     const step1 = steps.value.find(s => s.id === 1);
@@ -486,7 +708,7 @@ onMounted(() => {
     if (currentStep.value === 1 && centralPanelRef.value?.updateStep2ShotgunContext) {
         centralPanelRef.value.updateStep2ShotgunContext(output);
     }
-    checkAndProcessPendingFileTreeReload(); // Check after context generation
+    checkAndProcessPendingFileTreeReload();
   });
 
   EventsOn("shotgunContextError", (errorMsg) => {
@@ -494,15 +716,13 @@ onMounted(() => {
     shotgunPromptContext.value = "Error: " + errorMsg;
     isGeneratingContext.value = false;
     addLog(`Error generating context: ${errorMsg}`, 'error');
-    checkAndProcessPendingFileTreeReload(); // Check after context generation error
+    checkAndProcessPendingFileTreeReload();
   });
 
   EventsOn("shotgunContextGenerationProgress", (progress) => {
-    // console.log("FE: Progress event:", progress); // For debugging in Browser console
     generationProgressData.value = progress;
   });
 
-  // Get platform information
   (async () => {
     try {
       const envInfo = await Environment();
@@ -510,7 +730,6 @@ onMounted(() => {
       addLog(`Platform detected: ${platform.value}`, 'debug');
     } catch (err) {
       addLog(`Error getting platform: ${err}`, 'error');
-      // platform.value remains 'unknown' as fallback
     }
   })();
 
@@ -531,30 +750,47 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(async () => {
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleWindowResize);
+  window.removeEventListener('keydown', handleKeyNavigation);
+  if (projectRoot.value) {
+    StopFileWatcher(projectRoot.value).catch(err => {
+      console.error('Error stopping file watcher:', err);
+    });
+  }
   document.removeEventListener('mousemove', doResize);
   document.removeEventListener('mouseup', stopResize);
   clearTimeout(debounceTimer);
   if (projectRoot.value) {
-    await StopFileWatcher().catch(err => console.error("Error stopping file watcher on unmount:", err));
     addLog(`File watcher stopped on component unmount for ${projectRoot.value}`, 'debug');
   }
   if (unlistenProjectFilesChanged) {
     unlistenProjectFilesChanged();
   }
-  // Remember to unlisten other events if they return unlistener functions
 });
 
-watch([fileTree, useGitignore, useCustomIgnore], ([newFileTree, newUseGitignore, newUseCustomIgnore], [oldFileTree, oldUseGitignore, oldUseCustomIgnore]) => {
-  if (isFileTreeLoading.value) {
-    addLog("Watcher triggered during file tree load, generation deferred.", 'debug', 'bottom');
+// Watch for checkbox/exclusion changes
+function regenerateContextIfNeeded() {
+  if (isFileTreeLoading.value || !isExcludedStateChanging) {
     return;
   }
   
-  addLog("Watcher detected changes in fileTree, useGitignore, or useCustomIgnore. Re-evaluating context.", 'debug', 'bottom');
+  addLog("Regenerating context due to exclusion changes", 'debug', 'bottom');
+  isExcludedStateChanging = false;
+  debouncedTriggerShotgunContextGeneration();
+}
+
+// Watch for gitignore and custom ignore changes
+watch([useGitignore, useCustomIgnore], ([newUseGitignore, newUseCustomIgnore], [oldUseGitignore, oldUseCustomIgnore]) => {
+  if (isFileTreeLoading.value) {
+    addLog("Ignore settings changed during file tree load, generation deferred.", 'debug', 'bottom');
+    return;
+  }
+  
+  addLog("Watcher detected changes in useGitignore or useCustomIgnore. Re-evaluating context.", 'debug', 'bottom');
   updateAllNodesExcludedState(fileTree.value);
   debouncedTriggerShotgunContextGeneration();
-}, { deep: true });
+});
 
 watch(projectRoot, async (newRoot, oldRoot) => {
   if (oldRoot) {
@@ -605,9 +841,9 @@ function handleUserTaskUpdate(val) {
 
 function handleRulesContentUpdate(val) {
   rulesContent.value = val;
+  localStorage.setItem('shotgun-rules-content', val);
 }
 
-// Add handlers for the new updates
 function handleShotgunGitDiffUpdate(val) {
   shotgunGitDiff.value = val;
 }
@@ -616,10 +852,67 @@ function handleSplitLineLimitUpdate(val) {
   splitLineLimitValue.value = val;
 }
 
-</script>
-
-<style scoped>
-.flex-1 {
-  min-height: 0;
+function handleTemplateChange(templateKey) {
+  selectedTemplate.value = templateKey;
+  if (currentStep.value === 2) {
+    debouncedTriggerShotgunContextGeneration();
+  }
+  
+  addLog(`Changed prompt template to: ${templateKey}`, 'info');
 }
-</style> 
+
+function toggleSettings() {
+  isSettingsVisible.value = !isSettingsVisible.value;
+  addLog('Settings toggled', 'info', 'bottom');
+}
+
+const previousWidths = reactive({
+  1: parseInt(localStorage.getItem('shotgun-left-sidebar-min-width')) || 85,
+  2: parseInt(localStorage.getItem('shotgun-left-sidebar-full-width')) || 200
+});       
+
+function toggleLeftSidebar() {
+  leftSidebarState.value = (leftSidebarState.value + 1) % 3;
+  
+  if (leftSidebarState.value === 0) {
+    if (leftSidebarWidth.value > 0) {
+      if (leftSidebarWidth.value < 130) {
+        previousWidths[1] = leftSidebarWidth.value;
+        localStorage.setItem('shotgun-left-sidebar-min-width', previousWidths[1]);
+      } else {
+        previousWidths[2] = leftSidebarWidth.value;
+        localStorage.setItem('shotgun-left-sidebar-full-width', previousWidths[2]);
+      }
+    }
+    leftSidebarWidth.value = 0;
+  } else if (leftSidebarState.value === 1) {
+    leftSidebarWidth.value = previousWidths[1];
+  } else {
+    leftSidebarWidth.value = previousWidths[2];
+  }
+  
+  // Save state to localStorage
+  localStorage.setItem('shotgun-left-sidebar-state', leftSidebarState.value);
+  localStorage.setItem('shotgun-left-sidebar-width', leftSidebarWidth.value);
+  
+  addLog(`Left sidebar state changed to: ${leftSidebarState.value}`, 'info', 'bottom');
+}
+
+function handleStepCompletion(stepId) {
+  const step = steps.value.find(s => s.id === stepId);
+  if (step) {
+    step.completed = true;
+    addLog(`Step ${stepId} marked as completed`, 'info');
+    
+    if (currentStep.value === stepId) {
+      const nextStepId = stepId + 1;
+      const nextStep = steps.value.find(s => s.id === nextStepId);
+      if (nextStep) {
+        navigateToStep(nextStepId);
+        addLog(`Navigating to step ${nextStepId}`, 'info');
+      }
+    }
+  }
+}
+
+</script>
