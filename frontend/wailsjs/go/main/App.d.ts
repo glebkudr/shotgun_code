@@ -3,15 +3,31 @@
 import {main} from '../models';
 import {context} from '../models';
 
+export function AddProject(arg1:string):Promise<main.Project>;
+
 export function GetCustomIgnoreRules():Promise<string>;
 
 export function GetCustomPromptRules():Promise<string>;
 
+export function GetExcludedPathsForProject(arg1:string):Promise<Array<string>>;
+
+export function GetProject(arg1:string):Promise<main.Project|boolean>;
+
+export function GetProjects():Promise<Array<main.Project>>;
+
+export function ListAllProjects():Promise<Array<main.Project>>;
+
 export function ListFiles(arg1:string):Promise<Array<main.FileNode>>;
 
-export function RequestShotgunContextGeneration(arg1:string,arg2:Array<string>):Promise<void>;
+export function RefreshProject(arg1:string):Promise<void>;
+
+export function RemoveProject(arg1:string):Promise<void>;
+
+export function RequestShotgunContextGeneration(arg1:Array<string>,arg2:Record<string, Array<string>>):Promise<void>;
 
 export function SelectDirectory():Promise<string>;
+
+export function SelectDirectoryAndAddProject():Promise<main.Project>;
 
 export function SetCustomIgnoreRules(arg1:string):Promise<void>;
 
@@ -28,3 +44,5 @@ export function StartFileWatcher(arg1:string):Promise<void>;
 export function StartupTest(arg1:context.Context):Promise<void>;
 
 export function StopFileWatcher():Promise<void>;
+
+export function ToggleExcludeNodeInProject(arg1:string,arg2:string,arg3:boolean):Promise<void>;

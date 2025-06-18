@@ -7,19 +7,38 @@
     @save="handleSaveCustomRules"
     @cancel="handleCancelCustomRules"
   />
-  <aside class="w-64 md:w-72 lg:w-80 bg-gray-50 p-4 border-r border-gray-200 overflow-y-auto flex flex-col flex-shrink-0">
-    <!-- Project Selection and File Tree -->
+  <aside class="w-64 md:w-72 lg:w-80 bg-gray-50 p-4 border-r border-gray-200 overflow-y-auto flex flex-col flex-shrink-0">    <!-- Project Selection and File Tree -->
     <div class="mb-6">
       <button 
-        @click="$emit('select-folder')"
+        @click="$emit('add-project')"
         class="w-full px-4 py-2 mb-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
       >
-        Select Project Folder
+        Add Project Folder
       </button>
-      <div v-if="projectRoot" class="text-xs text-gray-600 mb-2 break-all">Selected: {{ projectRoot }}</div>
       
-      <div v-if="projectRoot" class="mb-2">
-        <label class="flex items-center text-sm text-gray-700" title="Uses .gitignore file if present in the project folder">
+      <!-- Projects List -->
+      <div v-if="projects.length > 0" class="mb-4">
+        <h3 class="text-sm font-medium text-gray-700 mb-2">Selected Projects ({{ projects.length }})</h3>
+        <div class="space-y-2 max-h-32 overflow-y-auto">
+          <div v-for="(project, index) in projects" :key="project.path" 
+               class="flex items-center justify-between bg-white p-2 rounded border text-xs">
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-gray-900 truncate">{{ project.name }}</div>
+              <div class="text-gray-500 truncate">{{ project.path }}</div>
+            </div>
+            <button 
+              @click="$emit('remove-project', index)"
+              class="ml-2 p-1 text-red-600 hover:bg-red-50 rounded"
+              title="Remove project"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      </div>
+        
+      <div v-if="projects.length > 0" class="mb-2">
+        <label class="flex items-center text-sm text-gray-700" title="Uses .gitignore files if present in project folders">
           <input 
             type="checkbox" 
             :checked="useGitignore"
@@ -28,7 +47,7 @@
           />
           Use .gitignore rules
         </label>
-        <label class="flex items-center text-sm text-gray-700 mt-1" title="Uses ignore.glob file if present in the project folder">
+        <label class="flex items-center text-sm text-gray-700 mt-1" title="Uses global custom ignore rules">
           <input
             type="checkbox"
             :checked="useCustomIgnore"
@@ -43,13 +62,13 @@
       <h2 class="text-lg font-semibold text-gray-700 mb-2">Project Files</h2>
       <div class="border border-gray-300 rounded min-h-[200px] bg-white text-sm overflow-auto max-h-[50vh]">
         <FileTree 
-            v-if="fileTreeNodes && fileTreeNodes.length" 
-            :nodes="fileTreeNodes" 
-            :project-root="projectRoot"
+            v-if="projects.length > 0 && allFileNodes && allFileNodes.length" 
+            :nodes="allFileNodes" 
+            :projects="projects"
             @toggle-exclude="(node) => $emit('toggle-exclude', node)"
         />
-        <p v-else-if="projectRoot && !loadingError" class="p-2 text-xs text-gray-500">Loading tree...</p>
-        <p v-else-if="!projectRoot" class="p-2 text-xs text-gray-500">Select a project folder to see files.</p>
+        <p v-else-if="projects.length > 0 && !loadingError" class="p-2 text-xs text-gray-500">Loading files...</p>
+        <p v-else-if="projects.length === 0" class="p-2 text-xs text-gray-500">Add project folders to see files.</p>
         <p v-if="loadingError" class="p-2 text-xs text-red-500">{{ loadingError }}</p>
       </div>
     </div>
@@ -94,14 +113,14 @@ import { LogError as LogErrorRuntime, LogInfo as LogInfoRuntime } from '../../wa
 const props = defineProps({
   currentStep: { type: Number, required: true },
   steps: { type: Array, required: true }, // Array of { id: Number, title: String, completed: Boolean }
-  projectRoot: { type: String, default: '' },
-  fileTreeNodes: { type: Array, default: () => [] },
+  projects: { type: Array, default: () => [] }, // Array of project objects with {name, path, fileNodes}
+  allFileNodes: { type: Array, default: () => [] }, // Combined file nodes from all projects
   useGitignore: { type: Boolean, default: true },
   useCustomIgnore: { type: Boolean, default: false },
   loadingError: { type: String, default: '' },
 });
 
-const emit = defineEmits(['navigate', 'select-folder', 'toggle-gitignore', 'toggle-custom-ignore', 'toggle-exclude', 'custom-rules-updated', 'add-log']);
+const emit = defineEmits(['navigate', 'add-project', 'remove-project', 'toggle-gitignore', 'toggle-custom-ignore', 'toggle-exclude', 'custom-rules-updated', 'add-log']);
 
 const isCustomRulesModalVisible = ref(false);
 const currentCustomRulesForModal = ref('');
