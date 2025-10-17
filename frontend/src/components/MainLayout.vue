@@ -196,31 +196,21 @@ function mapDataToTreeRecursive(nodes, parent) {
   });
 }
 
-function isAnyParentVisuallyExcluded(node) {
-  if (!node || !node.parent) {
-    return false;
-  }
-  let current = node.parent;
-  while (current) {
-    if (current.excluded) { // current.excluded reflects its visual/checkbox state
-      return true;
+function applyExclusionRecursively(node, isExcluded) {
+  node.excluded = isExcluded;
+  manuallyToggledNodes.set(node.relPath, isExcluded);
+
+  if (node.isDir && node.children) {
+    for (const child of node.children) {
+      applyExclusionRecursively(child, isExcluded);
     }
-    current = current.parent;
   }
-  return false;
 }
 
 function toggleExcludeNode(nodeToToggle) {
-  // If the node is under an unselected parent and is currently unselected itself (nodeToToggle.excluded is true),
-  // the first click should select it (set nodeToToggle.excluded to false).
-  if (isAnyParentVisuallyExcluded(nodeToToggle) && nodeToToggle.excluded) {
-    nodeToToggle.excluded = false;
-  } else {
-    // Otherwise, normal toggle behavior.
-    nodeToToggle.excluded = !nodeToToggle.excluded;
-  }
-  manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
-  addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
+  const newExcludedState = !nodeToToggle.excluded;
+  applyExclusionRecursively(nodeToToggle, newExcludedState);
+  addLog(`Toggled exclusion for ${nodeToToggle.name} and its descendants to ${newExcludedState}`, 'info', 'bottom');
 }
 
 function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-facing function

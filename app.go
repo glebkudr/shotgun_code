@@ -181,8 +181,9 @@ func buildTreeRecursive(ctx context.Context, currentPath, rootPath string, gitIg
 
 		if entry.IsDir() {
 			// If it's a directory, recursively call buildTree
-			// Only recurse if not ignored
-			if !isGitignored && !isCustomIgnored {
+			// Recursion stops only for folders ignored by custom rules.
+			// For folders from .gitignore, recursion continues so the UI can show their contents.
+			if !isCustomIgnored {
 				children, err := buildTreeRecursive(ctx, nodePath, rootPath, gitIgn, customIgn, depth+1)
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
