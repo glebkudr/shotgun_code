@@ -1,7 +1,7 @@
 <template>
   <div class="p-4 h-full flex flex-col">
     <!-- State 1: No Project Selected -->
-    <p v-if="!projectRoot" class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
+    <p v-if="!projectRoot" class="text-xs text-gray-500 dark:text-gray-400 mt-2 flex-grow flex justify-center items-center">
       Select a project folder to begin.
     </p>
 
@@ -10,10 +10,10 @@
       <!-- TOP BLOCK: User Task Input (Never disappears now) -->
       <div>
         <div class="flex items-center justify-between mb-1">
-          <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700">Your task for AI:</label>
+          <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Your task for AI:</label>
           <div class="flex items-center space-x-4">
             <div
-              class="flex items-center space-x-2 text-xs text-gray-600"
+              class="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400"
               title="Repo scan is attached to your context extraction prompt to better understand the repository structure and extract the right context."
             >
               <label class="flex items-center space-x-1 cursor-pointer hover:text-gray-900">
@@ -69,14 +69,14 @@
       <!-- BOTTOM BLOCK: Generated Context (Switches between Loading/Content) -->
       <div class="flex-grow flex flex-col min-h-0">
         <div class="flex items-center justify-between mb-1">
-          <h3 class="text-sm font-semibold text-gray-700">Generated Project Context:</h3>
+          <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Generated Project Context:</h3>
 
           <!-- Hide controls while loading to prevent interaction -->
           <div
             v-if="!isLoadingContext && generatedContext && !generatedContext.startsWith('Error:')"
             class="flex items-center space-x-3 text-xs"
           >
-            <span class="text-gray-500">
+            <span class="text-gray-500 dark:text-gray-400">
               {{ generatedContextSizeLabel }}
             </span>
             <button
@@ -89,11 +89,11 @@
         </div>
 
         <!-- Container for Viewer / Loader / Error -->
-        <div class="relative flex-grow flex flex-col border border-gray-300 rounded-md bg-white overflow-hidden">
+        <div class="relative flex-grow flex flex-col border border-gray-300 rounded-md bg-white dark:bg-slate-800 overflow-hidden">
           <!-- 1. Loading State Overlay -->
           <div
             v-if="isLoadingContext"
-            class="absolute inset-0 z-10 flex justify-center items-center bg-white bg-opacity-90"
+            class="absolute inset-0 z-10 flex justify-center items-center bg-white bg-opacity-90 dark:bg-slate-900 dark:bg-opacity-90"
           >
             <div class="text-center">
               <div class="w-64 mx-auto">
@@ -119,7 +119,7 @@
           >
             <h4 class="font-semibold mb-1">Error Generating Context:</h4>
             <pre
-              class="text-xs whitespace-pre-wrap text-left w-full bg-white p-2 border border-red-200 rounded max-h-60 overflow-auto"
+              class="text-xs whitespace-pre-wrap text-left w-full bg-white dark:bg-slate-800 p-2 border border-red-200 rounded max-h-60 overflow-auto"
             >{{ generatedContext.substring(6).trim() }}</pre>
           </div>
 
@@ -140,8 +140,8 @@
           />
 
           <!-- 4. Empty/Initial State -->
-          <div v-else class="flex-grow flex justify-center items-center bg-gray-50 h-full">
-            <p class="text-xs text-gray-500 px-4 text-center">
+          <div v-else class="flex-grow flex justify-center items-center bg-gray-50 dark:bg-slate-900 h-full">
+            <p class="text-xs text-gray-500 dark:text-gray-400 px-4 text-center">
               Project context will be generated automatically.
               <br />
               If empty after generation, ensure files are selected and not all excluded.
@@ -151,9 +151,9 @@
           <!-- Footer Note (Only visible when content exists and not loading) -->
           <div
             v-if="!isLoadingContext && generatedContext && !generatedContext.startsWith('Error:')"
-            class="bg-gray-50 p-1 border-t border-gray-200"
+            class="bg-gray-50 dark:bg-slate-900 p-1 border-t border-gray-200"
           >
-            <p class="text-xs text-gray-500 text-center">
+            <p class="text-xs text-gray-500 dark:text-gray-400 text-center">
               Preview is truncated for performance. Use Copy All to grab the full text.
             </p>
           </div>

@@ -1,5 +1,5 @@
 <template>
-  <main class="flex-1 p-0 overflow-y-auto bg-white relative">
+  <main class="flex-1 p-0 overflow-y-auto bg-white dark:bg-slate-900 relative">
     <Step1CopyStructure
       v-if="currentStep === 1"
       @action="handleAction"

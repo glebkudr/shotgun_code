@@ -90,6 +90,12 @@ function isEffectivelyExcludedByParent(node) {
 .node-item:hover {
   background-color: #f0f0f0;
 }
+
+/* Dark mode support */
+:dark .node-item:hover {
+  background-color: #2d3748;
+}
+
 .toggler {
   cursor: pointer;
   width: 20px;
@@ -112,10 +118,22 @@ function isEffectivelyExcludedByParent(node) {
   text-decoration: line-through;
   color: #999;
 }
+
+/* Dark mode for excluded text */
+:dark .excluded-node > .node-item > span:not(.toggler) {
+  color: #a0aec0;
+}
+
 /* Style for checkbox of an effectively excluded item (e.g. parent excluded) */
 .exclude-checkbox:disabled + span {
     color: #bbb; /* Lighter text for items under an excluded parent */
 }
+
+/* Dark mode for disabled checkbox text */
+:dark .exclude-checkbox:disabled + span {
+    color: #718096;
+}
+
 .exclude-checkbox:disabled {
     cursor: not-allowed;
 }
