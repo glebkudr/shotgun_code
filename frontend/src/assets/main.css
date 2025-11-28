@@ -2,6 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme variables for light/dark mode */
+:root {
+  --bg: #f4f4f5;
+  --text: #111827;
+  --panel: #ffffff;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #2563eb;
+}
+
+/* Dark theme variables applied when the top-level `.dark` class is present */
+.dark {
+  --bg: #0b1220;
+  --text: #e6eef8;
+  --panel: #0f1724;
+  --muted: #9ca3af;
+  --border: #172033;
+  --primary: #3b82f6;
+}
+
+/* Base page colors using variables so Tailwind utility classes still work alongside these defaults */
+html, body {
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background-color 160ms linear, color 160ms linear;
+}
+
+/* Form elements default to panel color in both themes */
+input, select, textarea {
+  background-color: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+  transition: background-color 120ms linear, color 120ms linear, border-color 120ms linear;
+}
+
+/* Provide a sensible default for elements that used raw white in markup */
+.panel-bg {
+  background-color: var(--panel);
+  color: var(--text);
+}
+
 /* Basic Reset */
 body,
 html {

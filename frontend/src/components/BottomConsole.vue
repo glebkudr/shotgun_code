@@ -11,7 +11,7 @@
         <span v-if="log.type !== 'info'" class="font-semibold">[{{ log.type.toUpperCase() }}] </span>
         {{ log.message }}
       </div>
-      <div v-if="logMessages.length === 0" class="text-gray-500">
+      <div v-if="logMessages.length === 0" class="text-gray-400">
         Console is empty.
       </div>
     </div>

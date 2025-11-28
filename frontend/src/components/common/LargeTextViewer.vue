@@ -1,12 +1,12 @@
 <template>
   <div class="flex flex-col w-full">
     <div v-if="showHeader && (label || totalSizeLabel)" class="flex items-center justify-between mb-1">
-      <label v-if="label" class="block text-sm font-medium text-gray-700">{{ label }}</label>
-      <span class="text-xs text-gray-500" v-if="totalSizeLabel">{{ totalSizeLabel }}</span>
+      <label v-if="label" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ label }}</label>
+      <span class="text-xs text-gray-500 dark:text-gray-400" v-if="totalSizeLabel">{{ totalSizeLabel }}</span>
     </div>
 
     <div
-      class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 font-mono text-xs text-gray-800 whitespace-pre-wrap break-words overflow-auto"
+      class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 dark:bg-slate-900 font-mono text-xs text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words overflow-auto"
       :style="{ minHeight, maxHeight }"
     >
       <template v-if="hasContent">
@@ -18,7 +18,7 @@
     </div>
 
     <div v-if="showFooter && hasContent" class="flex items-center justify-between mt-2">
-      <p class="text-xs" :class="isTruncated ? 'text-amber-600' : 'text-gray-500'">
+      <p class="text-xs" :class="isTruncated ? 'text-amber-600 dark:text-amber-500' : 'text-gray-500 dark:text-gray-400'">
         <template v-if="isTruncated">
           Showing preview of {{ previewSizeLabel }} ({{ displayedCharactersLabel }}) out of {{ totalSizeLabel }} ({{ totalCharactersLabel }})
         </template>
@@ -30,7 +30,7 @@
         v-if="showCopyButton"
         type="button"
         @click="copyFullContent"
-        class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
+        class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 dark:bg-slate-700 dark:text-gray-100 dark:hover:bg-slate-600"
       >
         {{ copyButtonText }}
       </button>

@@ -36,9 +36,9 @@
 
     <div class="flex-grow flex flex-row space-x-4 overflow-hidden">
       <!-- Left Column: Task, Rules, Files -->
-      <div class="w-1/2 flex flex-col space-y-3 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50">
+      <div class="w-1/2 flex flex-col space-y-3 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50 dark:bg-slate-900">
         <div>
-          <label for="user-task-ai" class="block text-sm font-medium text-gray-700 mb-1">Your task for AI:</label>
+          <label for="user-task-ai" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Your task for AI:</label>
           <textarea
             id="user-task-ai"
             v-model="localUserTask"
@@ -49,7 +49,7 @@
         </div>
 
         <div>
-          <label for="rules-content" class="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+          <label for="rules-content" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
             Custom rules:
             <button @click="openPromptRulesModal" title="Edit custom prompt rules" class="ml-2 p-0.5 hover:bg-gray-200 rounded text-xs">⚙️</button>
           </label>
@@ -58,7 +58,7 @@
             :value="rulesContent"
             @input="e => emit('update:rulesContent', e.target.value)"
             rows="8"
-            class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-sm font-mono"
+            class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-white dark:bg-slate-700 text-sm font-mono"
             placeholder="Rules for AI..."
           ></textarea>
         </div>
@@ -75,10 +75,10 @@
       </div>
 
       <!-- Right Column: Final Prompt -->
-      <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white relative">
+      <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white dark:bg-slate-800 relative">
         <div class="flex flex-wrap items-center gap-3 mb-2 min-h-[28px]">
           <div class="flex items-center space-x-2">
-            <h3 class="text-md font-medium text-gray-700">Prompt:</h3>
+            <h3 class="text-md font-medium text-gray-700 dark:text-gray-300">Prompt:</h3>
             <!-- Small Loading Indicator next to title instead of destroying content -->
             <div v-if="isLoadingFinalPrompt" class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
             <select
@@ -101,7 +101,7 @@
           <button
             @click="copyFinalPromptToClipboard"
             :disabled="!props.finalPrompt || isLoadingFinalPrompt"
-            class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
+            class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
             {{ copyButtonText }}
           </button>
@@ -129,7 +129,7 @@
               :show-copy-button="false"
             />
           </div>
-          <p class="text-xs text-gray-500 mt-1">
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Preview is truncated for performance. Use Copy All to grab the full text.
           </p>
         </div>
@@ -138,26 +138,26 @@
 
     <!-- Response Modal -->
     <div v-if="isResponseModalVisible" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg p-6 w-[90%] h-[90%] flex flex-col shadow-xl">
+      <div class="bg-white dark:bg-slate-800 rounded-lg p-6 w-[90%] h-[90%] flex flex-col shadow-xl">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold">LLM Response</h3>
                 <button @click="closeResponseModal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
             </div>
             <textarea 
                 readonly 
-                class="flex-grow p-4 border border-gray-300 rounded-md font-mono text-sm mb-4 resize-none bg-gray-50 focus:outline-none" 
+          class="flex-grow p-4 border border-gray-300 rounded-md font-mono text-sm mb-4 resize-none bg-white dark:bg-slate-800 focus:outline-none" 
                 :value="currentResponse"
             ></textarea>
             <div class="flex justify-end space-x-3">
                  <button 
-                    @click="copyResponse" 
-                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            @click="copyResponse" 
+            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors dark:bg-blue-600 dark:hover:bg-blue-700"
                  >
                     {{ copyResponseButtonText }}
                  </button>
                  <button 
-                    @click="closeResponseModal" 
-                    class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+            @click="closeResponseModal" 
+            class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors dark:bg-slate-700 dark:text-gray-100 dark:hover:bg-slate-600"
                  >
                     Close
                  </button>
