@@ -2,6 +2,19 @@
 
 ![Shotgun App Banner](https://github.com/user-attachments/assets/6dd15389-4ad9-493a-a0e7-9813eb143e38)
 
+> ## 🚀 **New Version Available: [ShotgunPro](https://shotgunpro.dev)**
+> 
+> We've built an improved version of this application with enhanced features including:
+> - **Code Indexing** for faster and more accurate context retrieval
+> - **Context Distillation** to optimize your prompts
+> - **LLM API Integration** built-in, plus the ability to copy-paste prompts to web LLMs
+> 
+> **[Try ShotgunPro at https://shotgunpro.dev](https://shotgunpro.dev)**
+> 
+> *Note: This original version of Shotgun remains fully functional and will continue to be available.*
+
+---
+
 **Tired of Cursor cutting off context, missing your files, and spitting out empty responses?**
 
 **Shotgun** is the bridge between your local codebase and the world's most powerful LLMs.
