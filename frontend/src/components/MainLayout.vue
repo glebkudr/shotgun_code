@@ -144,10 +144,6 @@ async function selectProjectFolderHandler() {
       
       await loadFileTree(selectedDir);
 
-      if (!isFileTreeLoading.value && projectRoot.value) {
-         debouncedTriggerShotgunContextGeneration();
-      }
-
       steps.value.forEach(s => s.completed = false);
       currentStep.value = 1;
       addLog(`Project folder selected: ${selectedDir}`, 'info', 'bottom');
@@ -179,6 +175,9 @@ async function loadFileTree(dirPath) {
     fileTree.value = [];
   } finally {
     isFileTreeLoading.value = false;
+    if (projectRoot.value) {
+      debouncedTriggerShotgunContextGeneration();
+    }
     checkAndProcessPendingFileTreeReload();
   }
 }
