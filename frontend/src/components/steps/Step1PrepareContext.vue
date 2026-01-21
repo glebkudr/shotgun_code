@@ -1,7 +1,7 @@
 <template>
   <div class="p-4 h-full flex flex-col">
     <!-- State 1: No Project Selected -->
-    <p v-if="!projectRoot" class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
+    <p v-if="!hasProjectRoots" class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
       Select a project folder to begin.
     </p>
 
@@ -13,7 +13,7 @@
           <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700">Your task for AI:</label>
           <div class="flex items-center space-x-4">
             <div
-              class="flex items-center space-x-2 text-xs text-gray-600"
+              class="flex items-center space-x-3 text-xs text-gray-600"
               title="Repo scan is attached to your context extraction prompt to better understand the repository structure and extract the right context."
             >
               <label class="flex items-center space-x-1 cursor-pointer hover:text-gray-900">
@@ -24,6 +24,17 @@
                 />
                 <span>Use repo scan:</span>
                 <span class="font-mono bg-gray-100 px-1 rounded text-gray-500">{{ repoScanTokensLabel }}</span>
+              </label>
+              <label v-if="projectRoots.length > 1" class="flex items-center space-x-1">
+                <span>Root:</span>
+                <select
+                  v-model="selectedRepoScanRoot"
+                  class="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
+                >
+                  <option v-for="root in projectRoots" :key="root.path" :value="root.path">
+                    {{ root.label }}
+                  </option>
+                </select>
               </label>
               <button
                 type="button"
@@ -77,7 +88,7 @@
             class="flex items-center space-x-3 text-xs"
           >
             <span :class="['font-medium', generatedContextTokensColorClass]">
-              ~{{ generatedContextTokensLabel }} tokens
+              {{ generatedContextTokensLabel }}
             </span>
             <button
               @click="copyGeneratedContextToClipboard"
@@ -173,7 +184,7 @@
 <script setup>
 import { defineProps, ref, computed, defineEmits, watch } from 'vue';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
-import { SaveRepoScan, LoadRepoScan } from '../../../wailsjs/go/main/App';
+import { SaveRepoScan, LoadRepoScan, CountTokens } from '../../../wailsjs/go/main/App';
 import RepoScanModal from '../RepoScanModal.vue';
 import LargeTextViewer from '../common/LargeTextViewer.vue';
 
@@ -182,9 +193,13 @@ const props = defineProps({
     type: String,
     default: ''
   },
-  projectRoot: {
-    type: String,
-    default: ''
+  generatedContextTokens: {
+    type: Number,
+    default: null
+  },
+  projectRoots: {
+    type: Array,
+    default: () => []
   },
   isLoadingContext: {
     type: Boolean,
@@ -214,6 +229,9 @@ const props = defineProps({
 
 const emit = defineEmits(['auto-context', 'open-llm-settings', 'update:userTask']);
 
+const hasProjectRoots = computed(() => Array.isArray(props.projectRoots) && props.projectRoots.length > 0);
+const selectedRepoScanRoot = ref('');
+
 const progressBarWidth = computed(() => {
   if (props.generationProgress && props.generationProgress.total > 0) {
     const percentage = (props.generationProgress.current / props.generationProgress.total) * 100;
@@ -227,31 +245,35 @@ const localUserTask = ref(props.userTask);
 let userTaskInputDebounceTimer = null;
 
 const includeRepoScan = ref(false);
-const repoScanTokenCount = ref(0);
+const repoScanTokenCount = ref(null);
 const repoScanContent = ref('');
 const isRepoScanModalVisible = ref(false);
 
 const repoScanTokensLabel = computed(() => {
-  if (repoScanTokenCount.value === 0) {
+  if (!repoScanContent.value) {
     return 'empty';
   }
-  return `${repoScanTokenCount.value} tokens`;
-});
-
-const generatedContextCharCount = computed(() => {
-  if (!props.generatedContext) {
-    return 0;
+  if (typeof repoScanTokenCount.value !== 'number') {
+    return 'n/a';
   }
-  return props.generatedContext.length;
+  return `${formatTokenCount(repoScanTokenCount.value)} tokens`;
 });
 
 const generatedContextTokensLabel = computed(() => {
-  const tokens = Math.round(generatedContextCharCount.value / 3);
-  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  if (!props.generatedContext) {
+    return 'empty';
+  }
+  if (typeof props.generatedContextTokens !== 'number') {
+    return 'n/a';
+  }
+  return `${formatTokenCount(props.generatedContextTokens)} tokens`;
 });
 
 const generatedContextTokensColorClass = computed(() => {
-  const count = generatedContextCharCount.value;
+  const count = props.generatedContextTokens;
+  if (typeof count !== 'number' || count <= 0) {
+    return 'text-gray-500';
+  }
   if (count < 1000000) {
     return 'text-green-600';
   } else if (count <= 4000000) {
@@ -300,9 +322,28 @@ watch(localUserTask, (currentValue) => {
   }, 300);
 });
 
-// Watch for project root changes to load repo scan
 watch(
-  () => props.projectRoot,
+  () => props.projectRoots,
+  (newRoots) => {
+    if (!Array.isArray(newRoots) || newRoots.length === 0) {
+      selectedRepoScanRoot.value = '';
+      repoScanContent.value = '';
+      includeRepoScan.value = false;
+      repoScanTokenCount.value = 0;
+      return;
+    }
+    const current = selectedRepoScanRoot.value;
+    const stillAvailable = newRoots.some((root) => root.path === current);
+    if (!current || !stillAvailable) {
+      selectedRepoScanRoot.value = newRoots[0].path;
+    }
+  },
+  { immediate: true, deep: true }
+);
+
+// Watch selected repo scan root to load repo scan
+watch(
+  () => selectedRepoScanRoot.value,
   async (newRoot) => {
     if (!newRoot) {
       repoScanContent.value = '';
@@ -316,7 +357,7 @@ watch(
       if (content) {
         repoScanContent.value = content;
         includeRepoScan.value = true;
-        updateTokenCount(content);
+        await updateTokenCount(content);
         return;
       }
 
@@ -333,13 +374,28 @@ watch(
   { immediate: true }
 );
 
-function updateTokenCount(text) {
-  // Simple estimation: length / 4
+function formatTokenCount(value) {
+  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
+
+let repoScanTokenRequestId = 0;
+async function updateTokenCount(text) {
+  const requestId = ++repoScanTokenRequestId;
   if (!text) {
     repoScanTokenCount.value = 0;
     return;
   }
-  repoScanTokenCount.value = Math.ceil(text.length / 4);
+  try {
+    const count = await CountTokens(text);
+    if (requestId === repoScanTokenRequestId) {
+      repoScanTokenCount.value = count;
+    }
+  } catch (err) {
+    console.error('Failed to count repo scan tokens:', err);
+    if (requestId === repoScanTokenRequestId) {
+      repoScanTokenCount.value = null;
+    }
+  }
 }
 
 async function copyGeneratedContextToClipboard() {
@@ -391,22 +447,22 @@ function handleAutoContextClick() {
 
 async function handleSaveRepoScan(content) {
   repoScanContent.value = content;
-  updateTokenCount(content);
+  await updateTokenCount(content);
   isRepoScanModalVisible.value = false;
 
-  if (content && props.projectRoot) {
+  const rootPath = selectedRepoScanRoot.value;
+  if (content && rootPath) {
     try {
-      await SaveRepoScan(props.projectRoot, content);
+      await SaveRepoScan(rootPath, content);
       includeRepoScan.value = true;
     } catch (err) {
       console.error('Failed to save repo scan:', err);
     }
     return;
   }
-
-  if (!content && props.projectRoot) {
+  if (!content && rootPath) {
     try {
-      await SaveRepoScan(props.projectRoot, '');
+      await SaveRepoScan(rootPath, '');
       includeRepoScan.value = false;
     } catch (err) {
       console.error('Failed to clear repo scan:', err);

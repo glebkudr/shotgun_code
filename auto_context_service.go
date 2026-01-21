@@ -148,9 +148,32 @@ func parseAutoContextJSON(text string) (AutoContextResult, error) {
 	return result, nil
 }
 
-func buildAutoContextTree(rootDir string, excludedMap map[string]bool) (string, error) {
-	var builder strings.Builder
-	builder.WriteString(filepath.Base(rootDir) + string(os.PathSeparator) + "\n")
+func writeAutoContextTree(builder *strings.Builder, rootDir, rootLabel string, excludedMap map[string]bool) error {
+	if builder == nil {
+		return errors.New("tree builder is required")
+	}
+	if strings.TrimSpace(rootDir) == "" {
+		return errors.New("project root is required")
+	}
+	label := strings.TrimSpace(rootLabel)
+	if label == "" {
+		label = filepath.Base(rootDir)
+	}
+	if label == "" || label == "." {
+		return errors.New("project root label is required")
+	}
+
+	appendLine := func(line string) error {
+		builder.WriteString(line)
+		if builder.Len() > maxAutoContextTreeChars {
+			return errAutoContextTreeTooLarge
+		}
+		return nil
+	}
+
+	if err := appendLine(filepath.ToSlash(label) + "/\n"); err != nil {
+		return err
+	}
 
 	var walk func(string, string) error
 	walk = func(currentPath, prefix string) error {
@@ -184,9 +207,8 @@ func buildAutoContextTree(rootDir string, excludedMap map[string]bool) (string, 
 				branch = "└── "
 				nextPrefix = prefix + "    "
 			}
-			builder.WriteString(prefix + branch + entry.Name() + "\n")
-			if builder.Len() > maxAutoContextTreeChars {
-				return errAutoContextTreeTooLarge
+			if err := appendLine(prefix + branch + entry.Name() + "\n"); err != nil {
+				return err
 			}
 
 			if entry.IsDir() {
@@ -198,8 +220,46 @@ func buildAutoContextTree(rootDir string, excludedMap map[string]bool) (string, 
 		return nil
 	}
 
-	if err := walk(rootDir, ""); err != nil {
+	return walk(rootDir, "")
+}
+
+func buildAutoContextTree(rootDir string, excludedMap map[string]bool) (string, error) {
+	var builder strings.Builder
+	if err := writeAutoContextTree(&builder, rootDir, filepath.Base(rootDir), excludedMap); err != nil {
 		return "", err
+	}
+	return builder.String(), nil
+}
+
+func buildAutoContextTreeForRoots(rootDirs []string, rootLabels map[string]string, excludedByRoot map[string]map[string]bool) (string, error) {
+	if len(rootDirs) == 0 {
+		return "", errors.New("project root is required")
+	}
+	rootOrder := make([]string, len(rootDirs))
+	copy(rootOrder, rootDirs)
+	sort.SliceStable(rootOrder, func(i, j int) bool {
+		return rootLabels[rootOrder[i]] < rootLabels[rootOrder[j]]
+	})
+
+	var builder strings.Builder
+	for idx, rootDir := range rootOrder {
+		label := strings.TrimSpace(rootLabels[rootDir])
+		if label == "" {
+			return "", fmt.Errorf("missing label for root: %s", rootDir)
+		}
+		excludedMap, ok := excludedByRoot[rootDir]
+		if !ok {
+			return "", fmt.Errorf("excluded paths missing for root: %s", rootDir)
+		}
+		if idx > 0 {
+			builder.WriteString("\n")
+			if builder.Len() > maxAutoContextTreeChars {
+				return "", errAutoContextTreeTooLarge
+			}
+		}
+		if err := writeAutoContextTree(&builder, rootDir, label, excludedMap); err != nil {
+			return "", err
+		}
 	}
 	if builder.Len() > maxAutoContextTreeChars {
 		return "", errAutoContextTreeTooLarge
@@ -220,47 +280,54 @@ func normalizeRelativePath(rel string) string {
 
 // normalizeCandidateForRoot brings an LLM-returned path into the canonical
 // "relative to rootDir" form. It accepts either strictly relative paths like
-// "frontend/src/..." or paths prefixed with the project root name, e.g.:
+// "frontend/src/..." or paths prefixed with the project root label/name, e.g.:
 //   "shotgun_code/frontend/src/..." when rootDir == ".../shotgun_code".
-func normalizeCandidateForRoot(rootDir, candidate string) string {
+func normalizeCandidateForRoot(rootDir, rootLabel, candidate string) string {
 	candidate = normalizeRelativePath(candidate)
 	if candidate == "" {
 		return ""
 	}
-
+	prefixes := make([]string, 0, 2)
+	if label := strings.TrimSpace(rootLabel); label != "" && label != "." {
+		prefixes = append(prefixes, filepath.ToSlash(label))
+	}
 	rootBase := filepath.Base(rootDir)
-	if rootBase == "" || rootBase == "." {
-		return candidate
-	}
-	rootBase = filepath.ToSlash(rootBase)
-
-	// Common case: "shotgun_code/frontend/src/..." → "frontend/src/..."
-	prefix := rootBase + "/"
-	if strings.HasPrefix(candidate, prefix) {
-		return strings.TrimPrefix(candidate, prefix)
+	if rootBase != "" && rootBase != "." && rootBase != rootLabel {
+		prefixes = append(prefixes, filepath.ToSlash(rootBase))
 	}
 
-	// Also accept "./shotgun_code/..." just in case the model prepends "./".
-	dotPrefix := "./" + prefix
-	if strings.HasPrefix(candidate, dotPrefix) {
-		return strings.TrimPrefix(candidate, dotPrefix)
-	}
-
-	// If the candidate is exactly the root name, it is not a file path.
-	if candidate == rootBase {
-		return ""
+	for _, prefix := range prefixes {
+		if candidate == prefix {
+			return "."
+		}
+		prefixWithSlash := prefix + "/"
+		if strings.HasPrefix(candidate, prefixWithSlash) {
+			trimmed := strings.TrimPrefix(candidate, prefixWithSlash)
+			if trimmed == "" {
+				return "."
+			}
+			return trimmed
+		}
+		dotPrefix := "./" + prefixWithSlash
+		if strings.HasPrefix(candidate, dotPrefix) {
+			trimmed := strings.TrimPrefix(candidate, dotPrefix)
+			if trimmed == "" {
+				return "."
+			}
+			return trimmed
+		}
 	}
 
 	return candidate
 }
 
-func resolveLLMSelection(rootDir string, candidates []string) ([]string, error) {
+func resolveLLMSelection(rootDir, rootLabel string, candidates []string, allowEmpty bool) ([]string, error) {
 	if len(candidates) == 0 {
 		return nil, errors.New("no candidate paths provided")
 	}
 	selected := make(map[string]struct{})
 	for _, candidate := range candidates {
-		candidate = normalizeCandidateForRoot(rootDir, candidate)
+		candidate = normalizeCandidateForRoot(rootDir, rootLabel, candidate)
 		if candidate == "" {
 			continue
 		}
@@ -293,6 +360,9 @@ func resolveLLMSelection(rootDir string, candidates []string) ([]string, error) 
 	}
 
 	if len(selected) == 0 {
+		if allowEmpty {
+			return []string{}, nil
+		}
 		return nil, errors.New("no existing files matched the LLM selection")
 	}
 
@@ -302,6 +372,77 @@ func resolveLLMSelection(rootDir string, candidates []string) ([]string, error) 
 	}
 	sort.Strings(sorted)
 	return sorted, nil
+}
+
+func resolveLLMSelectionForRoots(rootDirs []string, rootLabels map[string]string, candidates []string) (map[string][]string, error) {
+	if len(rootDirs) == 0 {
+		return nil, errors.New("project root is required")
+	}
+	labelToRoot := make(map[string]string, len(rootDirs))
+	for _, rootDir := range rootDirs {
+		label := strings.TrimSpace(rootLabels[rootDir])
+		if label == "" {
+			return nil, fmt.Errorf("missing label for root: %s", rootDir)
+		}
+		if _, exists := labelToRoot[label]; exists {
+			return nil, fmt.Errorf("duplicate root label: %s", label)
+		}
+		labelToRoot[label] = rootDir
+	}
+
+	normalized := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if normalizedCandidate := normalizeRelativePath(candidate); normalizedCandidate != "" {
+			normalized = append(normalized, normalizedCandidate)
+		}
+	}
+	if len(normalized) == 0 {
+		return nil, errors.New("no candidate paths provided")
+	}
+
+	grouped := make(map[string][]string, len(rootDirs))
+	for _, rootDir := range rootDirs {
+		grouped[rootDir] = []string{}
+	}
+
+	if len(rootDirs) == 1 {
+		rootDir := rootDirs[0]
+		grouped[rootDir] = append(grouped[rootDir], normalized...)
+	} else {
+		for _, candidate := range normalized {
+			parts := strings.SplitN(candidate, "/", 2)
+			label := parts[0]
+			rootDir, ok := labelToRoot[label]
+			if !ok {
+				return nil, fmt.Errorf("path %q does not include a known root label", candidate)
+			}
+			grouped[rootDir] = append(grouped[rootDir], candidate)
+		}
+	}
+
+	selectedByRoot := make(map[string][]string)
+	totalSelected := 0
+	for _, rootDir := range rootDirs {
+		rootCandidates := grouped[rootDir]
+		if len(rootCandidates) == 0 {
+			continue
+		}
+		selected, err := resolveLLMSelection(rootDir, rootLabels[rootDir], rootCandidates, true)
+		if err != nil {
+			return nil, err
+		}
+		if len(selected) == 0 {
+			continue
+		}
+		selectedByRoot[rootDir] = selected
+		totalSelected += len(selected)
+	}
+
+	if totalSelected == 0 {
+		return nil, errors.New("no existing files matched the LLM selection")
+	}
+
+	return selectedByRoot, nil
 }
 
 func buildProviderConfig(settings LLMSettings) provider.Config {

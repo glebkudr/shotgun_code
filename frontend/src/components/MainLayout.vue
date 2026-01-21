@@ -1,28 +1,39 @@
 <template>
   <div class="flex flex-col h-screen bg-gray-100">
     <HorizontalStepper :current-step="currentStep" :steps="steps" @navigate="navigateToStep" :key="`hstepper-${currentStep}-${steps.map(s=>s.completed).join('')}`" />
-    <div class="flex flex-1 overflow-hidden">
-      <LeftSidebar 
-        v-if="currentStep !== 3"
-        :current-step="currentStep" 
-        :steps="steps" 
-        :project-root="projectRoot"
-        :file-tree-nodes="fileTree"
-        :use-gitignore="useGitignore"
-        :use-custom-ignore="useCustomIgnore"
-        :loading-error="loadingError"
-        @navigate="navigateToStep"
-        @select-folder="selectProjectFolderHandler"
-        @toggle-gitignore="toggleGitignoreHandler"
-        @toggle-custom-ignore="toggleCustomIgnoreHandler"
-        @toggle-exclude="toggleExcludeNode"
-        @custom-rules-updated="handleCustomRulesUpdated"
-        @add-log="({message, type}) => addLog(message, type)" />
-      <CentralPanel :current-step="currentStep" 
+    <div ref="layoutRef" class="flex flex-1 overflow-hidden">
+      <template v-if="currentStep !== 3">
+        <div class="flex-shrink-0 h-full" :style="{ width: `${sidebarWidth}px` }">
+          <LeftSidebar 
+            class="w-full h-full"
+            :current-step="currentStep" 
+            :steps="steps" 
+            :project-roots="projectRoots"
+            :file-tree-nodes="fileTree"
+            :use-gitignore="useGitignore"
+            :use-custom-ignore="useCustomIgnore"
+            :loading-error="loadingError"
+            @navigate="navigateToStep"
+            @select-folder="selectProjectFolderHandler"
+            @remove-root="removeProjectRootHandler"
+            @toggle-gitignore="toggleGitignoreHandler"
+            @toggle-custom-ignore="toggleCustomIgnoreHandler"
+            @toggle-exclude="toggleExcludeNode"
+            @custom-rules-updated="handleCustomRulesUpdated"
+            @add-log="({message, type}) => addLog(message, type)" />
+        </div>
+        <div
+          class="w-1.5 bg-gray-300 hover:bg-gray-400 cursor-col-resize select-none"
+          title="Resize sidebar"
+          @mousedown="startSidebarResize"
+        ></div>
+      </template>
+      <CentralPanel class="flex-1 min-w-0" :current-step="currentStep" 
                     :shotgun-prompt-context="shotgunPromptContext"
+                    :shotgun-prompt-context-tokens="shotgunPromptContextTokens"
                     :generation-progress="generationProgressData"
                     :is-generating-context="isGeneratingContext"
-                    :project-root="projectRoot" 
+                    :project-roots="projectRoots" 
                     :platform="platform"
                     :user-task="userTask"
                     :rules-content="rulesContent"
@@ -54,14 +65,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, reactive, watch, onMounted, onBeforeUnmount, computed } from 'vue';
 import HorizontalStepper from './HorizontalStepper.vue';
 import LeftSidebar from './LeftSidebar.vue';
 import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
 import LlmSettingsModal from './LlmSettingsModal.vue';
 import {
+  AddProjectRoot,
+  GetProjectRoots,
   ListFiles,
+  RemoveProjectRoot,
   RequestAutoContextSelection,
   RequestShotgunContextGeneration,
   SelectDirectory as SelectDirectoryGo,
@@ -86,7 +100,15 @@ const logMessages = ref([]);
 const centralPanelRef = ref(null); 
 const bottomConsoleRef = ref(null);
 const MIN_CONSOLE_HEIGHT = 50;
+const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MAX_WIDTH = 640;
+const SIDEBAR_DEFAULT_WIDTH = 320;
+const MAIN_MIN_WIDTH = 360;
+const CONTEXT_GENERATION_DEBOUNCE_MS = 2000;
 const consoleHeight = ref(MIN_CONSOLE_HEIGHT); // Initial height in pixels
+const sidebarWidth = ref(SIDEBAR_DEFAULT_WIDTH);
+const isSidebarResizing = ref(false);
+const layoutRef = ref(null);
 
 function addLog(message, type = 'info', targetConsole = 'bottom') {
   const logEntry = {
@@ -104,15 +126,25 @@ function addLog(message, type = 'info', targetConsole = 'bottom') {
     }
   }
 }
+function nodeToggleKey(node) {
+  if (!node) return '';
+  if (node.path) return node.path;
+  if (node.rootPath || node.relPath) return `${node.rootPath || ''}::${node.relPath || ''}`;
+  return '';
+}
 
-const projectRoot = ref('');
+const projectRoots = ref([]);
+const projectRootPaths = computed(() => projectRoots.value.map((root) => root.path).filter(Boolean));
+const hasProjectRoots = computed(() => projectRootPaths.value.length > 0);
 const fileTree = ref([]);
 const shotgunPromptContext = ref('');
+const shotgunPromptContextTokens = ref(null);
 const loadingError = ref('');
 const useGitignore = ref(true);
 const useCustomIgnore = ref(true);
 const manuallyToggledNodes = reactive(new Map());
 const isGeneratingContext = ref(false);
+const contextRegenerationPending = ref(false);
 const generationProgressData = ref({ current: 0, total: 0 });
 const isFileTreeLoading = ref(false);
 const platform = ref('unknown'); // To store OS platform (e.g., 'darwin', 'windows', 'linux')
@@ -131,45 +163,68 @@ const projectFilesChangedPendingReload = ref(false);
 let unlistenProjectFilesChanged = null;
 
 async function selectProjectFolderHandler() {
-  isFileTreeLoading.value = true;
   try {
     shotgunPromptContext.value = '';
     isGeneratingContext.value = false;
     const selectedDir = await SelectDirectoryGo(); 
     if (selectedDir) {
-      projectRoot.value = selectedDir;
+      const updatedRoots = await AddProjectRoot(selectedDir);
+      projectRoots.value = updatedRoots;
       loadingError.value = '';
       manuallyToggledNodes.clear();
       fileTree.value = [];
-      
-      await loadFileTree(selectedDir);
-
-      if (!isFileTreeLoading.value && projectRoot.value) {
-         debouncedTriggerShotgunContextGeneration();
-      }
 
       steps.value.forEach(s => s.completed = false);
       currentStep.value = 1;
-      addLog(`Project folder selected: ${selectedDir}`, 'info', 'bottom');
-    } else {
-      isFileTreeLoading.value = false;
+      addLog(`Project folder added: ${selectedDir}`, 'info', 'bottom');
     }
   } catch (err) {
     console.error("Error selecting directory:", err);
     const errorMsg = "Failed to select directory: " + (err.message || err);
     loadingError.value = errorMsg;
     addLog(errorMsg, 'error', 'bottom');
-    isFileTreeLoading.value = false;
   }
 }
 
-async function loadFileTree(dirPath) {
+async function removeProjectRootHandler(rootPath) {
+  if (!rootPath) {
+    return;
+  }
+  try {
+    shotgunPromptContext.value = '';
+    isGeneratingContext.value = false;
+    const updatedRoots = await RemoveProjectRoot(rootPath);
+    projectRoots.value = updatedRoots;
+    loadingError.value = '';
+    manuallyToggledNodes.clear();
+    fileTree.value = [];
+    steps.value.forEach(s => s.completed = false);
+    currentStep.value = 1;
+    addLog(`Project folder removed: ${rootPath}`, 'info', 'bottom');
+  } catch (err) {
+    console.error("Error removing directory:", err);
+    const errorMsg = "Failed to remove directory: " + (err.message || err);
+    loadingError.value = errorMsg;
+    addLog(errorMsg, 'error', 'bottom');
+  }
+}
+
+async function loadFileTree(rootDirs) {
+  const roots = Array.isArray(rootDirs) ? rootDirs : projectRootPaths.value;
+  if (!roots || roots.length === 0) {
+    fileTree.value = [];
+    isFileTreeLoading.value = false;
+    return;
+  }
+  let loadSucceeded = false;
   isFileTreeLoading.value = true;
   loadingError.value = '';
-  addLog(`Loading file tree for: ${dirPath}`, 'info', 'bottom');
+  addLog(`Loading file tree for ${roots.length} root(s).`, 'info', 'bottom');
   try {
-    const treeData = await ListFiles(dirPath);
+    const treeData = await ListFiles(roots);
     fileTree.value = mapDataToTreeRecursive(treeData, null);
+    updateAllNodesExcludedState(fileTree.value);
+    loadSucceeded = true;
     addLog(`File tree loaded successfully. Root items: ${fileTree.value.length}`, 'info', 'bottom');
   } catch (err) {
     console.error("Error listing files:", err);
@@ -179,12 +234,15 @@ async function loadFileTree(dirPath) {
     fileTree.value = [];
   } finally {
     isFileTreeLoading.value = false;
+    if (loadSucceeded) {
+      debouncedTriggerShotgunContextGeneration();
+    }
     checkAndProcessPendingFileTreeReload();
   }
 }
 
 function calculateNodeExcludedState(node) {
-  const manualToggle = manuallyToggledNodes.get(node.relPath);
+  const manualToggle = manuallyToggledNodes.get(nodeToggleKey(node));
   if (manualToggle !== undefined) return manualToggle;
   if (useGitignore.value && node.isGitignored) return true;
   if (useCustomIgnore.value && node.isCustomIgnored) return true;
@@ -230,25 +288,31 @@ function hasVisuallyIncludedDescendant(node) {
   }
   return node.children.some((child) => !child.excluded || hasVisuallyIncludedDescendant(child));
 }
-
-function collectTrulyExcludedPaths(nodes, target) {
+function collectTrulyExcludedPathsByRoot(nodes, targetByRoot) {
   if (!nodes || nodes.length === 0) return;
   nodes.forEach((node) => {
     if (node.excluded && !hasVisuallyIncludedDescendant(node)) {
-      target.push(node.relPath);
+      const rootPath = node.rootPath;
+      if (!rootPath) {
+        return;
+      }
+      if (!targetByRoot[rootPath]) {
+        targetByRoot[rootPath] = [];
+      }
+      targetByRoot[rootPath].push(node.relPath);
     } else if (node.children && node.children.length > 0) {
-      collectTrulyExcludedPaths(node.children, target);
+      collectTrulyExcludedPathsByRoot(node.children, targetByRoot);
     }
   });
 }
 
 function buildExcludedPathsPayload() {
-  const excluded = [];
-  collectTrulyExcludedPaths(fileTree.value, excluded);
-  return excluded;
+  const excludedByRoot = {};
+  collectTrulyExcludedPathsByRoot(fileTree.value, excludedByRoot);
+  return excludedByRoot;
 }
 
-function collectIgnoredPathsOnly(nodes, target) {
+function collectIgnoredPathsOnlyByRoot(nodes, targetByRoot) {
   if (!nodes || nodes.length === 0) return;
   nodes.forEach((node) => {
     const ignoredByGit = useGitignore.value && node.isGitignored;
@@ -259,20 +323,27 @@ function collectIgnoredPathsOnly(nodes, target) {
       // For auto-context, we exclude whole branches based on the root ignored node.
       // Children may still be present in the UI tree (e.g. inside gitignored folders),
       // but for the auto-context tree it's enough to mark only the root path here.
-      target.push(node.relPath);
+      const rootPath = node.rootPath;
+      if (!rootPath) {
+        return;
+      }
+      if (!targetByRoot[rootPath]) {
+        targetByRoot[rootPath] = [];
+      }
+      targetByRoot[rootPath].push(node.relPath);
       return;
     }
 
     if (node.children && node.children.length > 0) {
-      collectIgnoredPathsOnly(node.children, target);
+      collectIgnoredPathsOnlyByRoot(node.children, targetByRoot);
     }
   });
 }
 
 function buildIgnoredPathsPayloadForAutoContext() {
-  const ignored = [];
-  collectIgnoredPathsOnly(fileTree.value, ignored);
-  return ignored;
+  const ignoredByRoot = {};
+  collectIgnoredPathsOnlyByRoot(fileTree.value, ignoredByRoot);
+  return ignoredByRoot;
 }
 
 function normalizeRelPath(value) {
@@ -289,22 +360,26 @@ function toggleExcludeNode(nodeToToggle) {
     // Otherwise, normal toggle behavior.
     nodeToToggle.excluded = !nodeToToggle.excluded;
   }
-  manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
+  manuallyToggledNodes.set(nodeToggleKey(nodeToToggle), nodeToToggle.excluded);
 
   // FIX: When toggling a folder, clear manual overrides for all descendants
   // so they inherit the new state of the parent. This fixes the issue where
   // Auto Context pins all files, preventing parent folders from affecting children.
   if (nodeToToggle.isDir) {
     clearDescendantManualToggles(nodeToToggle);
+    if (nodeToToggle.children && nodeToToggle.children.length > 0) {
+      _updateAllNodesExcludedStateRecursive(nodeToToggle.children, nodeToToggle.excluded);
+    }
   }
 
   addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
+  debouncedTriggerShotgunContextGeneration();
 }
 
 function clearDescendantManualToggles(node) {
   if (node.children && node.children.length > 0) {
     node.children.forEach(child => {
-      manuallyToggledNodes.delete(child.relPath);
+      manuallyToggledNodes.delete(nodeToggleKey(child));
       clearDescendantManualToggles(child);
     });
   }
@@ -318,7 +393,7 @@ function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-faci
 function _updateAllNodesExcludedStateRecursive(nodesToUpdate, parentIsVisuallyExcluded) {
    if (!nodesToUpdate || nodesToUpdate.length === 0) return;
    nodesToUpdate.forEach(node => {
-    const manualToggle = manuallyToggledNodes.get(node.relPath);
+    const manualToggle = manuallyToggledNodes.get(nodeToggleKey(node));
     let isExcludedByRule = false;
     if (useGitignore.value && node.isGitignored) isExcludedByRule = true;
     if (useCustomIgnore.value && node.isCustomIgnored) isExcludedByRule = true;
@@ -344,8 +419,8 @@ function toggleGitignoreHandler(value) {
   SetUseGitignore(value)
     .then(() => addLog(`Watchman instructed to use .gitignore: ${value}`, 'debug'))
     .catch(err => addLog(`Error setting useGitignore in backend: ${err}`, 'error'));
-  // Context regeneration is handled by the watch on [fileTree, useGitignore, useCustomIgnore]
-  // which calls updateAllNodesExcludedState and debouncedTriggerShotgunContextGeneration.
+  updateAllNodesExcludedState(fileTree.value);
+  debouncedTriggerShotgunContextGeneration();
 }
 
 function toggleCustomIgnoreHandler(value) {
@@ -354,10 +429,12 @@ function toggleCustomIgnoreHandler(value) {
   SetUseCustomIgnore(value)
     .then(() => addLog(`Watchman instructed to use custom ignores: ${value}`, 'debug'))
     .catch(err => addLog(`Error setting useCustomIgnore in backend: ${err}`, 'error'));
+  updateAllNodesExcludedState(fileTree.value);
+  debouncedTriggerShotgunContextGeneration();
 }
 
 function debouncedTriggerShotgunContextGeneration() {
-  if (!projectRoot.value) {
+  if (!hasProjectRoots.value) {
     // Clear context and stop loading if no project root
     shotgunPromptContext.value = ''; // Clear previous context
     generationProgressData.value = { current: 0, total: 0 }; // Reset progress
@@ -367,42 +444,50 @@ function debouncedTriggerShotgunContextGeneration() {
   }
 
   if (isFileTreeLoading.value) {
-    addLog("Debounced trigger skipped: file tree is loading.", 'debug', 'bottom');
-    isGeneratingContext.value = false;
+    contextRegenerationPending.value = true;
+    addLog("Context regeneration queued: file tree is loading.", 'debug', 'bottom');
     return;
   }
-
-  if (!isGeneratingContext.value) nextTick(() => isGeneratingContext.value = true);
+  if (isGeneratingContext.value) {
+    contextRegenerationPending.value = true;
+    addLog("Context regeneration queued: generation in progress.", 'debug', 'bottom');
+    return;
+  }
+  contextRegenerationPending.value = false;
 
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    if (!projectRoot.value) { 
-        isGeneratingContext.value = false;
-        return;
+    if (!hasProjectRoots.value) { 
+      isGeneratingContext.value = false;
+      return;
     }
     if (isFileTreeLoading.value) {
-        addLog("Debounced execution skipped: file tree became loading.", 'debug', 'bottom');
-        isGeneratingContext.value = false;
-        return;
+      contextRegenerationPending.value = true;
+      addLog("Context regeneration queued: file tree became loading.", 'debug', 'bottom');
+      return;
     }
+    isGeneratingContext.value = true;
 
     addLog("Debounced trigger: Requesting shotgun context generation...", 'info');
     
-    updateAllNodesExcludedState(fileTree.value);
     generationProgressData.value = { current: 0, total: 0 }; // Reset progress before new request
-
-    const excludedPathsArray = buildExcludedPathsPayload();
+    const excludedByRoot = buildExcludedPathsPayload();
  
-     RequestShotgunContextGeneration(projectRoot.value, excludedPathsArray)
+     RequestShotgunContextGeneration(projectRootPaths.value, excludedByRoot)
        .catch(err => {
         const errorMsg = "Error calling RequestShotgunContextGeneration: " + (err.message || err);
         addLog(errorMsg, 'error');
-        shotgunPromptContext.value = "Error: " + errorMsg; 
+        shotgunPromptContext.value = "Error: " + errorMsg;
+        isGeneratingContext.value = false;
+        if (contextRegenerationPending.value) {
+          contextRegenerationPending.value = false;
+          debouncedTriggerShotgunContextGeneration();
+        }
       })
       .finally(() => {
          // isGeneratingContext.value = false;
       });
-  }, 750); 
+  }, CONTEXT_GENERATION_DEBOUNCE_MS); 
 }
 
 function navigateToStep(stepId) {
@@ -482,27 +567,92 @@ function stopResize() {
   document.removeEventListener('mouseup', stopResize);
 }
 
+function clampSidebarWidth() {
+  const container = layoutRef.value;
+  if (!container) {
+    return;
+  }
+  const rect = container.getBoundingClientRect();
+  const maxAllowed = Math.max(
+    SIDEBAR_MIN_WIDTH,
+    Math.min(SIDEBAR_MAX_WIDTH, rect.width - MAIN_MIN_WIDTH)
+  );
+  if (sidebarWidth.value > maxAllowed) {
+    sidebarWidth.value = maxAllowed;
+  }
+  if (sidebarWidth.value < SIDEBAR_MIN_WIDTH) {
+    sidebarWidth.value = SIDEBAR_MIN_WIDTH;
+  }
+}
+
+function startSidebarResize(event) {
+  isSidebarResizing.value = true;
+  document.addEventListener('mousemove', doSidebarResize);
+  document.addEventListener('mouseup', stopSidebarResize);
+  event.preventDefault();
+}
+
+function doSidebarResize(event) {
+  if (!isSidebarResizing.value) {
+    return;
+  }
+  const container = layoutRef.value;
+  if (!container) {
+    return;
+  }
+  const rect = container.getBoundingClientRect();
+  let nextWidth = event.clientX - rect.left;
+  const maxAllowed = Math.max(
+    SIDEBAR_MIN_WIDTH,
+    Math.min(SIDEBAR_MAX_WIDTH, rect.width - MAIN_MIN_WIDTH)
+  );
+  nextWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(nextWidth, maxAllowed));
+  sidebarWidth.value = Math.round(nextWidth);
+}
+
+function stopSidebarResize() {
+  isSidebarResizing.value = false;
+  document.removeEventListener('mousemove', doSidebarResize);
+  document.removeEventListener('mouseup', stopSidebarResize);
+}
+
 onMounted(() => {
+  clampSidebarWidth();
+  window.addEventListener('resize', clampSidebarWidth);
   EventsOn("shotgunContextGenerated", (output) => {
     addLog("Wails event: shotgunContextGenerated RECEIVED", 'debug', 'bottom');
-    
-    if (shotgunPromptContext.value !== output) {
-      shotgunPromptContext.value = output;
+
+    let contextOutput = '';
+    let contextTokens = null;
+    if (typeof output === 'string') {
+      contextOutput = output;
+    } else if (output && typeof output === 'object') {
+      contextOutput = typeof output.output === 'string' ? output.output : '';
+      contextTokens = typeof output.tokens === 'number' ? output.tokens : null;
+    }
+
+    if (shotgunPromptContext.value !== contextOutput) {
+      shotgunPromptContext.value = contextOutput;
       // Context changed. If we are NOT on Step 2 (which handles live updates),
       // clear the stale finalPrompt so it regenerates when Step 2 mounts.
       if (currentStep.value !== 2) {
         finalPrompt.value = '';
       }
     }
+    shotgunPromptContextTokens.value = contextTokens;
 
     isGeneratingContext.value = false;
-    addLog(`Shotgun context updated (${output.length} chars).`, 'success');
+    addLog(`Shotgun context updated (${contextOutput.length} chars).`, 'success');
+    if (contextRegenerationPending.value) {
+      contextRegenerationPending.value = false;
+      debouncedTriggerShotgunContextGeneration();
+    }
     const step1 = steps.value.find(s => s.id === 1);
     if (step1 && !step1.completed) {
         step1.completed = true;
     }
     if (currentStep.value === 1 && centralPanelRef.value?.updateStep2ShotgunContext) {
-        centralPanelRef.value.updateStep2ShotgunContext(output);
+        centralPanelRef.value.updateStep2ShotgunContext(contextOutput);
     }
     checkAndProcessPendingFileTreeReload(); // Check after context generation
   });
@@ -510,8 +660,13 @@ onMounted(() => {
   EventsOn("shotgunContextError", (errorMsg) => {
     addLog(`Wails event: shotgunContextError RECEIVED: ${errorMsg}`, 'debug', 'bottom');
     shotgunPromptContext.value = "Error: " + errorMsg;
+    shotgunPromptContextTokens.value = null;
     isGeneratingContext.value = false;
     addLog(`Error generating context: ${errorMsg}`, 'error');
+    if (contextRegenerationPending.value) {
+      contextRegenerationPending.value = false;
+      debouncedTriggerShotgunContextGeneration();
+    }
     checkAndProcessPendingFileTreeReload(); // Check after context generation error
   });
 
@@ -552,9 +707,24 @@ onMounted(() => {
     }
   })();
 
+  (async () => {
+    try {
+      const roots = await GetProjectRoots();
+      if (Array.isArray(roots)) {
+        projectRoots.value = roots;
+        if (roots.length > 0) {
+          addLog(`Loaded ${roots.length} project root(s) from settings.`, 'debug');
+        }
+      }
+    } catch (err) {
+      addLog(`Failed to load project roots: ${err?.message || err}`, 'error', 'bottom');
+    }
+  })();
+
   unlistenProjectFilesChanged = EventsOn("projectFilesChanged", (changedRootDir) => {
-    if (changedRootDir !== projectRoot.value) {
-      addLog(`Watchman: Ignoring event for ${changedRootDir}, current root is ${projectRoot.value}`, 'debug');
+    const roots = projectRootPaths.value;
+    if (!roots.includes(changedRootDir)) {
+      addLog(`Watchman: Ignoring event for ${changedRootDir}, not in active roots.`, 'debug');
       return;
     }
     addLog(`Watchman: Event "projectFilesChanged" received for ${changedRootDir}.`, 'debug');
@@ -563,8 +733,8 @@ onMounted(() => {
       addLog("Watchman: File change detected, reload queued as system is busy.", 'info');
     } else {
       addLog("Watchman: File change detected, reloading tree immediately.", 'info');
-      loadFileTree(projectRoot.value); // This will set isFileTreeLoading = true
-      // debouncedTriggerShotgunContextGeneration will be called by the watcher on fileTree if projectRoot is set
+      loadFileTree(projectRootPaths.value); // This will set isFileTreeLoading = true
+      // loadFileTree will schedule context regeneration after refresh
     }
   });
 });
@@ -572,10 +742,13 @@ onMounted(() => {
 onBeforeUnmount(async () => {
   document.removeEventListener('mousemove', doResize);
   document.removeEventListener('mouseup', stopResize);
+  document.removeEventListener('mousemove', doSidebarResize);
+  document.removeEventListener('mouseup', stopSidebarResize);
+  window.removeEventListener('resize', clampSidebarWidth);
   clearTimeout(debounceTimer);
-  if (projectRoot.value) {
+  if (projectRootPaths.value.length > 0) {
     await StopFileWatcher().catch(err => console.error("Error stopping file watcher on unmount:", err));
-    addLog(`File watcher stopped on component unmount for ${projectRoot.value}`, 'debug');
+    addLog(`File watcher stopped on component unmount for ${projectRootPaths.value.length} root(s)`, 'debug');
   }
   if (unlistenProjectFilesChanged) {
     unlistenProjectFilesChanged();
@@ -583,29 +756,18 @@ onBeforeUnmount(async () => {
   // Remember to unlisten other events if they return unlistener functions
 });
 
-watch([fileTree, useGitignore, useCustomIgnore], ([newFileTree, newUseGitignore, newUseCustomIgnore], [oldFileTree, oldUseGitignore, oldUseCustomIgnore]) => {
-  if (isFileTreeLoading.value) {
-    addLog("Watcher triggered during file tree load, generation deferred.", 'debug', 'bottom');
-    return;
-  }
-  
-  addLog("Watcher detected changes in fileTree, useGitignore, or useCustomIgnore. Re-evaluating context.", 'debug', 'bottom');
-  updateAllNodesExcludedState(fileTree.value);
-  debouncedTriggerShotgunContextGeneration();
-}, { deep: true });
 
-watch(projectRoot, async (newRoot, oldRoot) => {
-  if (oldRoot) {
-    await StopFileWatcher().catch(err => addLog(`Error stopping watcher for ${oldRoot}: ${err}`, 'error'));
-    addLog(`File watcher stopped for ${oldRoot}`, 'debug');
+watch(projectRootPaths, async (newRoots, oldRoots) => {
+  const previousRoots = Array.isArray(oldRoots) ? oldRoots : [];
+  if (previousRoots.length > 0) {
+    await StopFileWatcher().catch(err => addLog(`Error stopping watcher for ${previousRoots.length} root(s): ${err}`, 'error'));
+    addLog(`File watcher stopped for ${previousRoots.length} root(s)`, 'debug');
   }
-  if (newRoot) {
-    // Existing logic to loadFileTree, clear errors, etc., happens in selectProjectFolderHandler
-    // which sets projectRoot. Here we just ensure the watcher starts for the new root.
-    await StartFileWatcher(newRoot).catch(err => addLog(`Error starting watcher for ${newRoot}: ${err}`, 'error'));
-    addLog(`File watcher started for ${newRoot}`, 'debug');
+  if (newRoots && newRoots.length > 0) {
+    await StartFileWatcher(newRoots).catch(err => addLog(`Error starting watcher for ${newRoots.length} root(s): ${err}`, 'error'));
+    addLog(`File watcher started for ${newRoots.length} root(s)`, 'debug');
+    await loadFileTree(newRoots);
   } else {
-    // Project root cleared, ensure watcher is stopped (already handled by oldRoot check if it was set)
     fileTree.value = [];
     shotgunPromptContext.value = '';
     loadingError.value = '';
@@ -613,7 +775,7 @@ watch(projectRoot, async (newRoot, oldRoot) => {
     isGeneratingContext.value = false; // Reset generation state
     projectFilesChangedPendingReload.value = false; // Reset pending reload
   }
-}, { immediate: false }); // 'immediate: false' to avoid running on initial undefined -> '' or '' -> initial value if set by default
+}, { deep: true });
 
 // Helper function to process pending reloads
 function checkAndProcessPendingFileTreeReload() {
@@ -622,18 +784,17 @@ function checkAndProcessPendingFileTreeReload() {
     addLog("Watchman: Processing queued file tree reload.", 'info');
     // It's important that loadFileTree correctly sets isFileTreeLoading to true at its start
     // and that subsequent context generation is also handled.
-    loadFileTree(projectRoot.value);
+    loadFileTree(projectRootPaths.value);
   }
 }
 
 function handleCustomRulesUpdated() {
   addLog("Custom ignore rules updated by user. Reloading file tree.", 'info');
-  if (projectRoot.value) {
+  if (projectRootPaths.value.length > 0) {
     // This will call ListFiles in Go, which will use the new custom rules from app.settings.
     // The new tree will have updated IsCustomIgnored flags.
-    // The watch on fileTree (and its subsequent call to debouncedTriggerShotgunContextGeneration)
-    // will then handle regenerating the context.
-    loadFileTree(projectRoot.value);
+    // loadFileTree will schedule context regeneration after refresh.
+    loadFileTree(projectRootPaths.value);
   }
 }
 
@@ -677,23 +838,38 @@ async function handleLlmSettingsSaved() {
   addLog('LLM settings updated.', 'success', 'bottom');
 }
 
-function applyAutoSelection(selectedRelativePaths) {
-  if (!Array.isArray(selectedRelativePaths) || selectedRelativePaths.length === 0) {
+function applyAutoSelection(selectionByRoot) {
+  if (!selectionByRoot || typeof selectionByRoot !== 'object') {
     addLog('Auto context returned an empty selection.', 'warn', 'bottom');
     return;
   }
-  const normalizedSet = new Set(
-    selectedRelativePaths.map((path) => normalizeRelPath(path)).filter((path) => path && path !== '.')
-  );
-  if (normalizedSet.size === 0) {
+
+  const selectionSets = new Map();
+  let totalSelected = 0;
+  Object.entries(selectionByRoot).forEach(([rootPath, paths]) => {
+    if (!Array.isArray(paths)) {
+      return;
+    }
+    const normalizedSet = new Set(
+      paths.map((path) => normalizeRelPath(path)).filter((path) => path && path !== '.')
+    );
+    if (normalizedSet.size > 0) {
+      selectionSets.set(rootPath, normalizedSet);
+      totalSelected += normalizedSet.size;
+    }
+  });
+
+  if (selectionSets.size === 0) {
     addLog('Auto context did not include any valid paths.', 'warn', 'bottom');
     return;
   }
 
   const markNode = (node) => {
     if (!node) return false;
+    const rootPath = node.rootPath;
     const normalized = normalizeRelPath(node.relPath);
-    let includeSelf = normalized === '' || normalized === '.' || normalizedSet.has(normalized);
+    const selectedSet = rootPath ? selectionSets.get(rootPath) : null;
+    let includeSelf = selectedSet ? selectedSet.has(normalized) : false;
     if (node.children && node.children.length > 0) {
       let childIncluded = false;
       node.children.forEach((child) => {
@@ -704,20 +880,20 @@ function applyAutoSelection(selectedRelativePaths) {
       includeSelf = includeSelf || childIncluded;
     }
     node.excluded = !includeSelf;
-    manuallyToggledNodes.set(node.relPath, node.excluded);
+    manuallyToggledNodes.set(nodeToggleKey(node), node.excluded);
     return includeSelf;
   };
 
   manuallyToggledNodes.clear();
   fileTree.value.forEach((node) => markNode(node));
   updateAllNodesExcludedState(fileTree.value);
-  addLog(`Auto context selected ${normalizedSet.size} paths.`, 'success', 'bottom');
+  addLog(`Auto context selected ${totalSelected} paths.`, 'success', 'bottom');
   debouncedTriggerShotgunContextGeneration();
 }
 
 async function requestAutoContextSelection() {
-  if (!projectRoot.value) {
-    addLog('Select a project folder before running auto context.', 'warn', 'bottom');
+  if (!hasProjectRoots.value) {
+    addLog('Select at least one project folder before running auto context.', 'warn', 'bottom');
     return;
   }
   if (!hasActiveLlmKey.value) {
@@ -733,13 +909,13 @@ async function requestAutoContextSelection() {
   try {
     // For Auto context we want the project tree that is NOT filtered by user selections,
     // only reduced by .gitignore and ignore.glob rules (when enabled).
-    const excludedPathsArray = buildIgnoredPathsPayloadForAutoContext();
+    const excludedByRoot = buildIgnoredPathsPayloadForAutoContext();
     const selection = await RequestAutoContextSelection(
-      projectRoot.value,
-      excludedPathsArray,
+      projectRootPaths.value,
+      excludedByRoot,
       userTask.value || ''
     );
-    if (Array.isArray(selection) && selection.length > 0) {
+    if (selection && typeof selection === 'object' && Object.keys(selection).length > 0) {
       applyAutoSelection(selection);
     } else {
       addLog('Auto context call completed but returned no files.', 'warn', 'bottom');

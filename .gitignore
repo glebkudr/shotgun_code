@@ -62,6 +62,8 @@ logs/
 *.bak
 *.tmp
 Show-DirectoryTree.ps1
+shotgun.desktop
+run-shotgun.sh
 
 # If you have specific large files or data that shouldn't be in git
 # data/

@@ -4,7 +4,11 @@ import {main} from '../models';
 import {provider} from '../models';
 import {context} from '../models';
 
+export function AddProjectRoot(arg1:string):Promise<Array<main.ProjectRoot>>;
+
 export function ClearPromptHistory():Promise<void>;
+
+export function CountTokens(arg1:string):Promise<number>;
 
 export function ExecuteLLMPrompt(arg1:string,arg2:string):Promise<main.PromptHistoryItem>;
 
@@ -16,19 +20,23 @@ export function GetCustomPromptRules():Promise<string>;
 
 export function GetLlmSettings():Promise<main.LLMSettings>;
 
+export function GetProjectRoots():Promise<Array<main.ProjectRoot>>;
+
 export function GetPromptHistory():Promise<Array<main.PromptHistoryItem>>;
 
 export function HasActiveLlmKey():Promise<boolean>;
 
-export function ListFiles(arg1:string):Promise<Array<main.FileNode>>;
+export function ListFiles(arg1:Array<string>):Promise<Array<main.FileNode>>;
 
 export function ListLlmModels(arg1:string):Promise<Array<provider.ModelInfo>>;
 
 export function LoadRepoScan(arg1:string):Promise<string>;
 
-export function RequestAutoContextSelection(arg1:string,arg2:Array<string>,arg3:string):Promise<Array<string>>;
+export function RemoveProjectRoot(arg1:string):Promise<Array<main.ProjectRoot>>;
 
-export function RequestShotgunContextGeneration(arg1:string,arg2:Array<string>):Promise<void>;
+export function RequestAutoContextSelection(arg1:Array<string>,arg2:Record<string, Array<string>>,arg3:string):Promise<Record<string, Array<string>>>;
+
+export function RequestShotgunContextGeneration(arg1:Array<string>,arg2:Record<string, Array<string>>):Promise<void>;
 
 export function SaveRepoScan(arg1:string,arg2:string):Promise<void>;
 
@@ -52,7 +60,7 @@ export function SetUseGitignore(arg1:boolean):Promise<void>;
 
 export function SplitShotgunDiff(arg1:string,arg2:number):Promise<Array<string>>;
 
-export function StartFileWatcher(arg1:string):Promise<void>;
+export function StartFileWatcher(arg1:Array<string>):Promise<void>;
 
 export function StartupTest(arg1:context.Context):Promise<void>;
 

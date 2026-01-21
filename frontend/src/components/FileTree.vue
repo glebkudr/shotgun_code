@@ -16,11 +16,13 @@
         <span @click="node.isDir ? toggleExpand(node) : null" :class="{ 'folder-name': node.isDir }">
           {{ node.name }}
         </span>
+        <span class="size-label">
+          ({{ formatBytes(node.sizeBytes) }} / {{ formatTokens(node.tokensApprox) }})
+        </span>
       </div>
       <FileTree 
         v-if="node.isDir && node.expanded && node.children" 
         :nodes="node.children" 
-        :project-root="projectRoot"
         :depth="depth + 1"
         @toggle-exclude="emitToggleExclude"
       />
@@ -33,7 +35,6 @@ import { defineProps, defineEmits } from 'vue';
 
 const props = defineProps({
   nodes: Array,
-  projectRoot: String,
   depth: {
     type: Number,
     default: 0
@@ -50,6 +51,14 @@ function toggleExpand(node) {
   if (node.isDir) {
     node.expanded = !node.expanded;
   }
+}
+
+function formatBytes(value) {
+  return `${value.toLocaleString()} B`;
+}
+
+function formatTokens(value) {
+  return `${value.toLocaleString()} tokens`;
 }
 
 function handleCheckboxChange(node) {
@@ -118,6 +127,11 @@ function isEffectivelyExcludedByParent(node) {
 }
 .exclude-checkbox:disabled {
     cursor: not-allowed;
+}
+.size-label {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #6b7280;
 }
 
 </style>

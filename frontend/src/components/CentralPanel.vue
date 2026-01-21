@@ -6,8 +6,9 @@
       @auto-context="emit('auto-context')"
       @open-llm-settings="emit('open-llm-settings')"
       :generated-context="shotgunPromptContext"
+      :generated-context-tokens="props.shotgunPromptContextTokens"
       :is-loading-context="props.isGeneratingContext"
-      :project-root="props.projectRoot"
+      :project-roots="props.projectRoots"
       :generation-progress="props.generationProgress"
       :platform="props.platform"
       :has-active-llm-key="props.hasActiveLlmKey"
@@ -20,6 +21,7 @@
       @action="handleAction" 
       ref="step2Ref" 
       :file-list-context="props.shotgunPromptContext" 
+      :file-list-context-tokens="props.shotgunPromptContextTokens"
       @update:finalPrompt="(val) => emit('update-composed-prompt', val)" 
       :platform="props.platform" 
       :user-task="props.userTask" 
@@ -43,8 +45,9 @@ import Step3ExecutePrompt from './steps/Step3ExecutePrompt.vue';
 const props = defineProps({
   currentStep: { type: Number, required: true },
   shotgunPromptContext: { type: String, default: '' },
+  shotgunPromptContextTokens: { type: Number, default: null },
   isGeneratingContext: { type: Boolean, default: false },
-  projectRoot: { type: String, default: '' },
+  projectRoots: { type: Array, default: () => [] },
   generationProgress: { type: Object, default: () => ({ current: 0, total: 0 }) },
   platform: { type: String, default: 'unknown' },
   userTask: { type: String, default: '' },
