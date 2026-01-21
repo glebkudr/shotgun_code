@@ -4,6 +4,10 @@ export namespace main {
 	    name: string;
 	    path: string;
 	    relPath: string;
+	    rootPath: string;
+	    rootLabel: string;
+	    sizeBytes: number;
+	    tokensApprox: number;
 	    isDir: boolean;
 	    children?: FileNode[];
 	    isGitignored: boolean;
@@ -18,6 +22,10 @@ export namespace main {
 	        this.name = source["name"];
 	        this.path = source["path"];
 	        this.relPath = source["relPath"];
+	        this.rootPath = source["rootPath"];
+	        this.rootLabel = source["rootLabel"];
+	        this.sizeBytes = source["sizeBytes"];
+	        this.tokensApprox = source["tokensApprox"];
 	        this.isDir = source["isDir"];
 	        this.children = this.convertValues(source["children"], FileNode);
 	        this.isGitignored = source["isGitignored"];
@@ -62,6 +70,20 @@ export namespace main {
 	        this.openRouterKey = source["openRouterKey"];
 	        this.geminiKey = source["geminiKey"];
 	        this.baseURL = source["baseURL"];
+	    }
+	}
+	export class ProjectRoot {
+	    path: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProjectRoot(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.label = source["label"];
 	    }
 	}
 	export class PromptHistoryItem {

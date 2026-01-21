@@ -66,6 +66,7 @@
         <LargeTextViewer
           label="Files to include:"
           :content="props.fileListContext"
+          :tokens-exact="props.fileListContextTokens"
           placeholder="File list from Step 1 (Prepare Context) will appear here..."
           :platform="props.platform"
           min-height="200px"
@@ -179,6 +180,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  fileListContextTokens: {
+    type: Number,
+    default: null
+  },
   platform: { // To know if we are on macOS
     type: String,
     default: 'unknown'
@@ -253,7 +258,7 @@ const executeButtonClass = computed(() => {
   return 'auto-context-button--enabled';
 });
 
-const DEFAULT_RULES = `no additional rules`;
+const DEFAULT_RULES = `пиши по-русски`;
 
 onMounted(async () => {
   try {

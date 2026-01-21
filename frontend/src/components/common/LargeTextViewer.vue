@@ -2,7 +2,7 @@
   <div class="flex flex-col w-full">
     <div v-if="showHeader && (label || tokensLabel)" class="flex items-center justify-between mb-1">
       <label v-if="label" class="block text-sm font-medium text-gray-700">{{ label }}</label>
-      <span :class="['text-xs font-medium', tokenCountColorClass]" v-if="tokensLabel">~{{ tokensLabel }} tokens</span>
+      <span :class="['text-xs font-medium', tokenCountColorClass]" v-if="tokensLabel">{{ tokensLabel }}</span>
     </div>
 
     <div
@@ -20,10 +20,10 @@
     <div v-if="showFooter && hasContent" class="flex items-center justify-between mt-2">
       <p class="text-xs" :class="isTruncated ? 'text-amber-600' : 'text-gray-500'">
         <template v-if="isTruncated">
-          Showing ~{{ previewTokensLabel }} tokens ({{ displayedCharactersLabel }}) out of ~{{ tokensLabel }} tokens ({{ totalCharactersLabel }})
+          Showing {{ previewTokensLabel }} ({{ displayedCharactersLabel }}) out of {{ tokensLabel }} ({{ totalCharactersLabel }})
         </template>
         <template v-else>
-          ~{{ tokensLabel }} tokens ({{ totalCharactersLabel }})
+          {{ tokensLabel }} ({{ totalCharactersLabel }})
         </template>
       </p>
       <button
@@ -41,6 +41,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
+import { CountTokens } from '../../../wailsjs/go/main/App';
 
 const props = defineProps({
   content: {
@@ -70,6 +71,10 @@ const props = defineProps({
   maxHeight: {
     type: String,
     default: '1000px'
+  },
+  tokensExact: {
+    type: Number,
+    default: null
   },
   showCopyButton: {
     type: Boolean,
@@ -102,14 +107,34 @@ const displayedCharacters = computed(() => Math.min(totalCharacters.value, props
 const hasContent = computed(() => totalCharacters.value > 0);
 const isTruncated = computed(() => totalCharacters.value > props.maxDisplayLength);
 const displayContent = computed(() => (props.content || '').slice(0, props.maxDisplayLength));
+const shouldShowTokens = computed(() => props.showHeader || props.showFooter);
 
-const approximateTokens = computed(() => Math.round(totalCharacters.value / 3));
+const totalTokens = ref(null);
+const previewTokens = ref(null);
+let totalTokensRequestId = 0;
+let previewTokensRequestId = 0;
+let totalTokensTimer = null;
+let previewTokensTimer = null;
+
+function formatTokenCount(value) {
+  return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
+
 const tokensLabel = computed(() => {
-  return approximateTokens.value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  if (!shouldShowTokens.value) {
+    return null;
+  }
+  if (totalTokens.value === null) {
+    return 'n/a';
+  }
+  return `${formatTokenCount(totalTokens.value)} tokens`;
 });
 
 const tokenCountColorClass = computed(() => {
-  const count = totalCharacters.value;
+  const count = totalTokens.value;
+  if (typeof count !== 'number' || count <= 0) {
+    return 'text-gray-500';
+  }
   if (count < 1000000) {
     return 'text-green-600';
   } else if (count <= 4000000) {
@@ -119,11 +144,97 @@ const tokenCountColorClass = computed(() => {
 });
 
 const previewTokensLabel = computed(() => {
-  const tokens = Math.round(displayedCharacters.value / 3);
-  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  if (!shouldShowTokens.value) {
+    return null;
+  }
+  if (previewTokens.value === null) {
+    return 'n/a';
+  }
+  return `${formatTokenCount(previewTokens.value)} tokens`;
 });
 const displayedCharactersLabel = computed(() => `${displayedCharacters.value.toLocaleString()} chars`);
 const totalCharactersLabel = computed(() => `${totalCharacters.value.toLocaleString()} chars`);
+
+async function computeTotalTokens(text) {
+  const requestId = ++totalTokensRequestId;
+  if (!text) {
+    totalTokens.value = 0;
+    return;
+  }
+  try {
+    const count = await CountTokens(text);
+    if (requestId === totalTokensRequestId) {
+      totalTokens.value = count;
+    }
+  } catch (err) {
+    console.error('Failed to count tokens:', err);
+    if (requestId === totalTokensRequestId) {
+      totalTokens.value = null;
+    }
+  }
+}
+
+async function computePreviewTokens(text) {
+  const requestId = ++previewTokensRequestId;
+  if (!text) {
+    previewTokens.value = 0;
+    return;
+  }
+  try {
+    const count = await CountTokens(text);
+    if (requestId === previewTokensRequestId) {
+      previewTokens.value = count;
+    }
+  } catch (err) {
+    console.error('Failed to count preview tokens:', err);
+    if (requestId === previewTokensRequestId) {
+      previewTokens.value = null;
+    }
+  }
+}
+
+function scheduleTotalTokens(text) {
+  if (totalTokensTimer) {
+    clearTimeout(totalTokensTimer);
+  }
+  totalTokensTimer = setTimeout(() => {
+    void computeTotalTokens(text);
+  }, 200);
+}
+
+function schedulePreviewTokens(text) {
+  if (previewTokensTimer) {
+    clearTimeout(previewTokensTimer);
+  }
+  previewTokensTimer = setTimeout(() => {
+    void computePreviewTokens(text);
+  }, 200);
+}
+
+watch([() => props.content, () => props.tokensExact, shouldShowTokens], () => {
+  if (!shouldShowTokens.value) {
+    totalTokens.value = null;
+    previewTokens.value = null;
+    return;
+  }
+  if (typeof props.tokensExact === 'number' && props.tokensExact >= 0) {
+    totalTokens.value = props.tokensExact;
+    return;
+  }
+  scheduleTotalTokens(props.content);
+}, { immediate: true });
+
+watch([displayContent, isTruncated, () => totalTokens.value, shouldShowTokens], () => {
+  if (!shouldShowTokens.value) {
+    previewTokens.value = null;
+    return;
+  }
+  if (!isTruncated.value) {
+    previewTokens.value = totalTokens.value;
+    return;
+  }
+  schedulePreviewTokens(displayContent.value);
+}, { immediate: true });
 
 async function copyFullContent() {
   if (!props.content) return;
