@@ -103,23 +103,23 @@ const hasContent = computed(() => totalCharacters.value > 0);
 const isTruncated = computed(() => totalCharacters.value > props.maxDisplayLength);
 const displayContent = computed(() => (props.content || '').slice(0, props.maxDisplayLength));
 
-const approximateTokens = computed(() => Math.round(totalCharacters.value / 3));
+const approximateTokens = computed(() => Math.round(totalCharacters.value / 4));
 const tokensLabel = computed(() => {
   return approximateTokens.value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 });
 
 const tokenCountColorClass = computed(() => {
-  const count = totalCharacters.value;
-  if (count < 1000000) {
+  const tokens = approximateTokens.value;
+  if (tokens < 500_000) {
     return 'text-green-600';
-  } else if (count <= 4000000) {
+  } else if (tokens < 1_500_000) {
     return 'text-yellow-500';
   }
   return 'text-red-600';
 });
 
 const previewTokensLabel = computed(() => {
-  const tokens = Math.round(displayedCharacters.value / 3);
+  const tokens = Math.round(displayedCharacters.value / 4);
   return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 });
 const displayedCharactersLabel = computed(() => `${displayedCharacters.value.toLocaleString()} chars`);

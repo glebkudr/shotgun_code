@@ -245,16 +245,19 @@ const generatedContextCharCount = computed(() => {
   return props.generatedContext.length;
 });
 
-const generatedContextTokensLabel = computed(() => {
-  const tokens = Math.round(generatedContextCharCount.value / 3);
-  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-});
+const generatedContextTokensValue = computed(() =>
+  Math.round(generatedContextCharCount.value / 4)
+);
+
+const generatedContextTokensLabel = computed(() =>
+  generatedContextTokensValue.value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")
+);
 
 const generatedContextTokensColorClass = computed(() => {
-  const count = generatedContextCharCount.value;
-  if (count < 1000000) {
+  const tokens = generatedContextTokensValue.value;
+  if (tokens < 500_000) {
     return 'text-green-600';
-  } else if (count <= 4000000) {
+  } else if (tokens < 1_500_000) {
     return 'text-yellow-500';
   }
   return 'text-red-600';

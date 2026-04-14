@@ -8,6 +8,8 @@ export namespace main {
 	    children?: FileNode[];
 	    isGitignored: boolean;
 	    isCustomIgnored: boolean;
+	    size: number;
+	    tokenEstimate: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new FileNode(source);
@@ -22,6 +24,8 @@ export namespace main {
 	        this.children = this.convertValues(source["children"], FileNode);
 	        this.isGitignored = source["isGitignored"];
 	        this.isCustomIgnored = source["isCustomIgnored"];
+	        this.size = source["size"];
+	        this.tokenEstimate = source["tokenEstimate"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
