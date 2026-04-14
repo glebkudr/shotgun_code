@@ -44,7 +44,7 @@ The Go backend is structured mainly inside the `main` package.
     -   Accepts the job context `jobCtx` for cancellation, `rootDir`, and the list of `excludedPaths`.
     -   Builds a textual representation of the file tree and aggregates the contents of non‑excluded files in an XML‑like format (`<file path="...">...</file>`).
     -   Periodically calls `emitProgress` to send the `shotgunContextGenerationProgress` event to the frontend.
-    -   Checks the overall size of the generated output against `maxOutputSizeBytes`. If the limit is exceeded, returns the `ErrContextTooLong` error.
+    -   No hard output size limit: the full selection is always emitted. The frontend surfaces a per-directory token estimate in the tree and a total token counter so users can see when they approach an LLM's context window.
     -   On completion (or on error/cancellation) sends either `shotgunContextGenerated` or `shotgunContextError` to the frontend.
 -   **`Watchman` struct**: Component for monitoring filesystem changes.
     -   `StartFileWatcher(rootDirPath string) error` / `StopFileWatcher() error`: Methods exposed to the frontend.
@@ -186,14 +186,10 @@ The project context (`shotgunPromptContext`) is generated asynchronously to impr
     -   `MainLayout.vue` listens for the event and updates `generationProgressData`.
     -   `Step1PrepareContext.vue` shows a progress bar and textual progress information.
 
-### 6.2. Output size limitation
+### 6.2. Output size guidance (non-blocking)
 
--   **Backend (Go – `app.go`)**:
-    -   The `maxOutputSizeBytes` constant (for example, 10 MB) defines the maximum context size.
-    -   Error `ErrContextTooLong`.
-    -   `generateShotgunOutputWithProgress` checks size at various stages. If the limit is exceeded, generation is stopped and `ErrContextTooLong` is returned.
-    -   The error is propagated to the frontend via the `shotgunContextError` event.
--   **Frontend (Vue.js)**: The error message is displayed in `Step1PrepareContext.vue`.
+-   **Backend (Go – `app.go`)**: no hard size cap. Generation always emits the full selection. `FileNode` carries `size` (bytes) and `tokenEstimate` (bytes / 4) aggregated for directories so the frontend can show per-node token counts in the tree.
+-   **Frontend (Vue.js)**: `FileTree.vue` shows a `~Xk` token badge next to each node. `Step1PrepareContext.vue` and `LargeTextViewer.vue` render a color-coded total-token counter (green < 500k, yellow < 1.5M, red ≥ 1.5M). Users decide when a selection is too large for the target LLM's context window.
 
 ## 7. Cross‑platform Support
 

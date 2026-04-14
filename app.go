@@ -22,8 +22,8 @@ import (
 	"shotgun_code/internal/labgradient"
 )
 
-const maxOutputSizeBytes = 10_000_000 // 10MB
-var ErrContextTooLong = errors.New("context is too long")
+// Token estimation: approx 4 bytes per token (Gemini/GPT-ish heuristic for mixed code).
+const bytesPerTokenEstimate = 4
 
 //go:embed ignore.glob
 var defaultCustomIgnoreRulesContent string
@@ -135,6 +135,8 @@ type FileNode struct {
 	Children        []*FileNode `json:"children,omitempty"`
 	IsGitignored    bool        `json:"isGitignored"`    // True if path matches a .gitignore rule
 	IsCustomIgnored bool        `json:"isCustomIgnored"` // True if path matches a ignore.glob rule
+	Size            int64       `json:"size"`            // Size in bytes (file) or sum of children sizes (dir)
+	TokenEstimate   int64       `json:"tokenEstimate"`   // Rough token estimate (bytes / 4)
 }
 
 // SelectDirectory opens a dialog to select a directory and returns the chosen path
@@ -182,6 +184,13 @@ func (a *App) ListFiles(dirPath string) ([]*FileNode, error) {
 		return []*FileNode{rootNode}, fmt.Errorf("error building children tree for %s: %w", dirPath, err)
 	}
 	rootNode.Children = children
+	for _, child := range rootNode.Children {
+		if child.IsGitignored || child.IsCustomIgnored {
+			continue
+		}
+		rootNode.Size += child.Size
+		rootNode.TokenEstimate += child.TokenEstimate
+	}
 
 	return []*FileNode{rootNode}, nil
 }
@@ -251,6 +260,21 @@ func buildTreeRecursive(ctx context.Context, currentPath, rootPath string, gitIg
 				} else {
 					node.Children = children
 				}
+				// Aggregate size/tokens only from non-ignored children so badges match the
+				// content that will actually be emitted to the LLM. Ignored children keep their
+				// own per-node counts (visible if the user re-enables them) but don't roll up.
+				for _, child := range node.Children {
+					if child.IsGitignored || child.IsCustomIgnored {
+						continue
+					}
+					node.Size += child.Size
+					node.TokenEstimate += child.TokenEstimate
+				}
+			}
+		} else {
+			if info, infoErr := entry.Info(); infoErr == nil {
+				node.Size = info.Size()
+				node.TokenEstimate = info.Size() / bytesPerTokenEstimate
 			}
 		}
 		nodes = append(nodes, node)
@@ -294,7 +318,7 @@ func (cg *ContextGenerator) requestShotgunContextGenerationInternal(rootDir stri
 	myToken := new(struct{}) // Create a unique token for this generation job
 	cg.currentCancelFunc = cancel
 	cg.currentCancelToken = myToken
-	runtime.LogInfof(cg.app.ctx, "Starting new shotgun context generation for: %s. Max size: %d bytes.", rootDir, maxOutputSizeBytes)
+	runtime.LogInfof(cg.app.ctx, "Starting new shotgun context generation for: %s (no hard size limit).", rootDir)
 	cg.mu.Unlock()
 
 	go func(tokenForThisJob interface{}) {
@@ -332,9 +356,6 @@ func (cg *ContextGenerator) requestShotgunContextGenerationInternal(rootDir stri
 			} else {
 				finalSize := len(output)
 				successMsg := fmt.Sprintf("Shotgun context generated successfully for %s. Size: %d bytes.", rootDir, finalSize)
-				if finalSize > maxOutputSizeBytes { // Should have been caught by ErrContextTooLong, but as a safeguard
-					runtime.LogWarningf(cg.app.ctx, "Warning: Generated context size %d exceeds max %d, but was not caught by ErrContextTooLong.", finalSize, maxOutputSizeBytes)
-				}
 				runtime.LogInfo(cg.app.ctx, successMsg)
 				runtime.EventsEmit(cg.app.ctx, "shotgunContextGenerated", output)
 			}
@@ -521,9 +542,6 @@ func (a *App) generateShotgunOutputWithProgress(jobCtx context.Context, rootDir 
 	output.WriteString(filepath.Base(rootDir) + string(os.PathSeparator) + "\n")
 	progressState.processedItems++
 	a.emitProgress(progressState)
-	if output.Len() > maxOutputSizeBytes {
-		return "", fmt.Errorf("%w: content limit of %d bytes exceeded after root dir line (size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, output.Len())
-	}
 
 	// buildShotgunTreeRecursive is a recursive helper for generating the tree string and file contents
 	var buildShotgunTreeRecursive func(pCtx context.Context, currentPath, prefix string) error
@@ -590,10 +608,6 @@ func (a *App) generateShotgunOutputWithProgress(jobCtx context.Context, rootDir 
 			progressState.processedItems++ // For tree entry
 			a.emitProgress(progressState)
 
-			if output.Len()+fileContents.Len() > maxOutputSizeBytes {
-				return fmt.Errorf("%w: content limit of %d bytes exceeded during tree generation (size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, output.Len()+fileContents.Len())
-			}
-
 			if entry.IsDir() {
 				err := buildShotgunTreeRecursive(pCtx, path, nextPrefix)
 				if err != nil {
@@ -623,10 +637,6 @@ func (a *App) generateShotgunOutputWithProgress(jobCtx context.Context, rootDir 
 
 				progressState.processedItems++ // For file content
 				a.emitProgress(progressState)
-
-				if output.Len()+fileContents.Len() > maxOutputSizeBytes { // Final check after append
-					return fmt.Errorf("%w: content limit of %d bytes exceeded after appending file %s (total size: %d bytes)", ErrContextTooLong, maxOutputSizeBytes, relPath, output.Len()+fileContents.Len())
-				}
 			}
 		}
 		return nil

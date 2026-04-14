@@ -16,6 +16,9 @@
         <span @click="node.isDir ? toggleExpand(node) : null" :class="{ 'folder-name': node.isDir }">
           {{ node.name }}
         </span>
+        <span v-if="node.tokenEstimate > 0" class="token-badge">
+          ~{{ formatTokens(node.tokenEstimate) }}
+        </span>
       </div>
       <FileTree 
         v-if="node.isDir && node.expanded && node.children" 
@@ -59,6 +62,12 @@ function handleCheckboxChange(node) {
 
 function emitToggleExclude(node) {
     emit('toggle-exclude', node); // Bubble up the event
+}
+
+function formatTokens(n) {
+  if (!n || n < 1000) return `${n}t`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
 // A node is effectively excluded if one of its PARENTS is.
@@ -118,6 +127,14 @@ function isEffectivelyExcludedByParent(node) {
 }
 .exclude-checkbox:disabled {
     cursor: not-allowed;
+}
+.token-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 </style>
