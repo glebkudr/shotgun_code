@@ -5,7 +5,7 @@
 **Tired of Cursor cutting off context, missing your files, and spitting out empty responses?**
 
 **Shotgun** is the bridge between your local codebase and the world's most powerful LLMs.
-It doesn't just copy files; it **intelligently packages your project context** and can **execute prompts directly** against OpenAI (GPT-4o/GPT-5), Google Gemini, or OpenRouter.
+It doesn't just copy files; it **intelligently packages your project context** and can **execute prompts directly** against OpenAI (GPT-4o/GPT-5), Google Gemini, OpenRouter, or Requesty.
 
 > **Stop copy-pasting 50 files manually.**
 > 1. Select your repo.
@@ -19,7 +19,7 @@ Shotgun is a desktop power-tool that **explodes your project into a structured p
 
 It has evolved from a simple "context dumper" into a full-fledged **LLM Client for Codebases**:
 *   **Smart Selection:** Uses AI ("Auto-Context") to analyze your task and automatically select only the relevant files from your tree.
-*   **Direct Execution:** Configurable API integration with **OpenAI**, **Gemini**, and **OpenRouter**.
+*   **Direct Execution:** Configurable API integration with **OpenAI**, **Gemini**, **OpenRouter**, and **Requesty**.
 *   **Prompt Engineering:** Built-in templates for different roles (Developer, Architect, Bug Hunter).
 *   **History & Audit:** Keeps a full log of every prompt sent and response received.
 
@@ -40,6 +40,7 @@ It has evolved from a simple "context dumper" into a full-fledged **LLM Client f
 *   **OpenAI:** Support for GPT-4o and experimental support for **GPT-5** family models.
 *   **Google Gemini:** Native integration for Gemini 2.5/3 Pro & Flash.
 *   **OpenRouter:** Access hundreds of LLM's via a unified API.
+*   **Requesty:** Hosted OpenAI-compatible LLM router; access many models via `provider/model` naming through a unified API.
 
 ### 🛠 Developer Experience
 *   **Prompt Templates:** Switch modes easily (e.g., "Find Bug" vs "Refactor" vs "Write Docs").
@@ -101,7 +102,7 @@ wails build
 
 ### LLM Setup
 Click the **Settings** (gear icon) in the app to configure providers:
-1.  **Provider:** Select OpenAI, Gemini, or OpenRouter.
+1.  **Provider:** Select OpenAI, Gemini, OpenRouter, or Requesty.
 2.  **API Key:** Paste your key (stored locally).
 3.  **Model:** Select your preferred model (e.g., `gpt-4o`, `gemini-2.5-pro`, `claude-3.5-sonnet`).
 

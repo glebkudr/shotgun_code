@@ -47,6 +47,7 @@ export namespace main {
 	    model: string;
 	    openAIKey: string;
 	    openRouterKey: string;
+	    requestyKey: string;
 	    geminiKey: string;
 	    baseURL: string;
 	
@@ -60,6 +61,7 @@ export namespace main {
 	        this.model = source["model"];
 	        this.openAIKey = source["openAIKey"];
 	        this.openRouterKey = source["openRouterKey"];
+	        this.requestyKey = source["requestyKey"];
 	        this.geminiKey = source["geminiKey"];
 	        this.baseURL = source["baseURL"];
 	    }

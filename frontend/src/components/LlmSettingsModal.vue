@@ -135,12 +135,14 @@ const emit = defineEmits(['close', 'saved']);
 const providerOptions = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'openrouter', label: 'OpenRouter' },
+  { value: 'requesty', label: 'Requesty' },
   { value: 'gemini', label: 'Google Gemini' },
 ];
 
 const providerDefaultModels = {
   openai: 'gpt-5',
   openrouter: 'openai/gpt-5',
+  requesty: 'openai/gpt-4o-mini',
   gemini: 'gemini-2.5-pro',
 };
 
@@ -150,6 +152,7 @@ const localBaseUrl = ref('');
 const localApiKeys = reactive({
   openai: '',
   openrouter: '',
+  requesty: '',
   gemini: '',
 });
 
@@ -183,6 +186,7 @@ function syncStateFromProps() {
   localBaseUrl.value = settings.baseURL || '';
   localApiKeys.openai = settings.openAIKey || '';
   localApiKeys.openrouter = settings.openRouterKey || '';
+  localApiKeys.requesty = settings.requestyKey || '';
   localApiKeys.gemini = settings.geminiKey || '';
   modelOptions.value = [];
   errorMessage.value = '';

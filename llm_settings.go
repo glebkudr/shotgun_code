@@ -21,6 +21,8 @@ func normalizeProviderName(name string) string {
 		return LLMProviderOpenAI
 	case LLMProviderOpenRouter:
 		return LLMProviderOpenRouter
+	case LLMProviderRequesty:
+		return LLMProviderRequesty
 	case LLMProviderGemini:
 		return LLMProviderGemini
 	default:
@@ -36,6 +38,8 @@ func defaultModelForProvider(providerName string) string {
 		return "gemini-2.5-pro"
 	case LLMProviderOpenRouter:
 		return "openai/gpt-5"
+	case LLMProviderRequesty:
+		return "openai/gpt-4o-mini"
 	default:
 		return ""
 	}
@@ -47,6 +51,8 @@ func (l LLMSettings) keyForProvider(providerName string) string {
 		return strings.TrimSpace(l.OpenAIKey)
 	case LLMProviderOpenRouter:
 		return strings.TrimSpace(l.OpenRouterKey)
+	case LLMProviderRequesty:
+		return strings.TrimSpace(l.RequestyKey)
 	case LLMProviderGemini:
 		return strings.TrimSpace(l.GeminiKey)
 	default:
@@ -61,6 +67,7 @@ func (a *App) ensureLLMSettingsDefaults() {
 	settings.BaseURL = strings.TrimSpace(settings.BaseURL)
 	settings.OpenAIKey = strings.TrimSpace(settings.OpenAIKey)
 	settings.OpenRouterKey = strings.TrimSpace(settings.OpenRouterKey)
+	settings.RequestyKey = strings.TrimSpace(settings.RequestyKey)
 	settings.GeminiKey = strings.TrimSpace(settings.GeminiKey)
 
 	if settings.ActiveProvider != "" && settings.keyForProvider(settings.ActiveProvider) == "" {
@@ -93,6 +100,8 @@ func (a *App) SetLlmApiKey(providerName, apiKey string) error {
 		a.settings.LLMSettings.OpenAIKey = apiKey
 	case LLMProviderOpenRouter:
 		a.settings.LLMSettings.OpenRouterKey = apiKey
+	case LLMProviderRequesty:
+		a.settings.LLMSettings.RequestyKey = apiKey
 	case LLMProviderGemini:
 		a.settings.LLMSettings.GeminiKey = apiKey
 	}
