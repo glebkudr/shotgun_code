@@ -33,6 +33,7 @@ const defaultCustomPromptRulesContent = "no additional rules"
 const (
 	LLMProviderOpenAI     = "openai"
 	LLMProviderOpenRouter = "openrouter"
+	LLMProviderRequesty   = "requesty"
 	LLMProviderGemini     = "gemini"
 )
 
@@ -41,6 +42,7 @@ type LLMSettings struct {
 	Model          string `json:"model"`
 	OpenAIKey      string `json:"openAIKey"`
 	OpenRouterKey  string `json:"openRouterKey"`
+	RequestyKey    string `json:"requestyKey"`
 	GeminiKey      string `json:"geminiKey"`
 	BaseURL        string `json:"baseURL"`
 }

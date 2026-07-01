@@ -31,6 +31,17 @@ var openRouterModelCatalog = []ModelInfo{
 	{Name: "z-ai/glm-4.6", Description: "GLM 4.6 via OpenRouter"},
 }
 
+var requestyModelCatalog = []ModelInfo{
+	{Name: "openai/gpt-4o-mini", Description: "GPT-4o mini via Requesty"},
+	{Name: "openai/gpt-4o", Description: "GPT-4o via Requesty"},
+	{Name: "openai/gpt-4.1", Description: "GPT-4.1 via Requesty"},
+	{Name: "anthropic/claude-sonnet-4-5", Description: "Claude Sonnet 4.5 via Requesty"},
+	{Name: "google/gemini-2.5-flash", Description: "Gemini 2.5 Flash via Requesty"},
+	{Name: "google/gemini-2.5-pro", Description: "Gemini 2.5 Pro via Requesty"},
+	{Name: "deepseek/deepseek-chat", Description: "DeepSeek Chat via Requesty"},
+	{Name: "x-ai/grok-4-fast", Description: "Grok 4 Fast via Requesty"},
+}
+
 var geminiModelCatalog = []ModelInfo{
 	{Name: "gemini-2.5-pro", Description: "Most capable Gemini 2.5 Pro"},
 	{Name: "gemini-2.5-flash", Description: "Flash"},
@@ -52,6 +63,8 @@ func ModelCatalog(providerName string) ([]ModelInfo, error) {
 		return cloneModelCatalog(openAIModelCatalog), nil
 	case "openrouter":
 		return cloneModelCatalog(openRouterModelCatalog), nil
+	case "requesty":
+		return cloneModelCatalog(requestyModelCatalog), nil
 	case "gemini":
 		return cloneModelCatalog(geminiModelCatalog), nil
 	default:

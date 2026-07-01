@@ -40,6 +40,8 @@ func Factory(cfg Config) (LLMProvider, error) {
 		return newOpenAIProvider(cfg)
 	case "openrouter":
 		return newOpenRouterProvider(cfg)
+	case "requesty":
+		return newRequestyProvider(cfg)
 	case "gemini":
 		return newGeminiProvider(cfg)
 	default:
