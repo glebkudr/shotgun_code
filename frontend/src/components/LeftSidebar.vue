@@ -46,6 +46,7 @@
             v-if="fileTreeNodes && fileTreeNodes.length" 
             :nodes="fileTreeNodes" 
             :project-root="projectRoot"
+            :use-custom-ignore="useCustomIgnore"
             @toggle-exclude="(node) => $emit('toggle-exclude', node)"
         />
         <p v-else-if="projectRoot && !loadingError" class="p-2 text-xs text-gray-500">Loading tree...</p>
