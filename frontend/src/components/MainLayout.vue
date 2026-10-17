@@ -170,6 +170,7 @@ async function loadFileTree(dirPath) {
   try {
     const treeData = await ListFiles(dirPath);
     fileTree.value = mapDataToTreeRecursive(treeData, null);
+    updateAllNodesExcludedState(fileTree.value);
     addLog(`File tree loaded successfully. Root items: ${fileTree.value.length}`, 'info', 'bottom');
   } catch (err) {
     console.error("Error listing files:", err);
@@ -281,23 +282,16 @@ function normalizeRelPath(value) {
 }
 
 function toggleExcludeNode(nodeToToggle) {
-  // If the node is under an unselected parent and is currently unselected itself (nodeToToggle.excluded is true),
-  // the first click should select it (set nodeToToggle.excluded to false).
-  if (isAnyParentVisuallyExcluded(nodeToToggle) && nodeToToggle.excluded) {
-    nodeToToggle.excluded = false;
-  } else {
-    // Otherwise, normal toggle behavior.
-    nodeToToggle.excluded = !nodeToToggle.excluded;
-  }
+  nodeToToggle.excluded = !nodeToToggle.excluded;
   manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
 
-  // FIX: When toggling a folder, clear manual overrides for all descendants
-  // so they inherit the new state of the parent. This fixes the issue where
-  // Auto Context pins all files, preventing parent folders from affecting children.
+  // When toggling a folder, clear manual overrides for all descendants
+  // so they inherit the new state of the parent folder.
   if (nodeToToggle.isDir) {
     clearDescendantManualToggles(nodeToToggle);
   }
 
+  updateAllNodesExcludedState(fileTree.value);
   addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
 }
 
@@ -311,32 +305,44 @@ function clearDescendantManualToggles(node) {
 }
 
 function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-facing function
-  // It calls the recursive helper, starting with parentIsVisuallyExcluded = false for root nodes.
-  _updateAllNodesExcludedStateRecursive(nodesToUpdate, false);
+  _updateAllNodesExcludedStateRecursive(nodesToUpdate, false, false);
 }
 
-function _updateAllNodesExcludedStateRecursive(nodesToUpdate, parentIsVisuallyExcluded) {
-   if (!nodesToUpdate || nodesToUpdate.length === 0) return;
-   nodesToUpdate.forEach(node => {
+function _updateAllNodesExcludedStateRecursive(nodesToUpdate, parentIsVisuallyExcluded, ancestorExplicitlyIncluded) {
+  if (!nodesToUpdate || nodesToUpdate.length === 0) return;
+  nodesToUpdate.forEach(node => {
     const manualToggle = manuallyToggledNodes.get(node.relPath);
     let isExcludedByRule = false;
     if (useGitignore.value && node.isGitignored) isExcludedByRule = true;
     if (useCustomIgnore.value && node.isCustomIgnored) isExcludedByRule = true;
 
+    let isNodeExplicitlyIncluded = false;
+
     if (manualToggle !== undefined) {
-      // If there's a manual toggle, it dictates the state.
+      // Direct manual toggle by user overrides rules
       node.excluded = manualToggle;
+      isNodeExplicitlyIncluded = !manualToggle;
+    } else if (ancestorExplicitlyIncluded) {
+      // Inherit explicit inclusion from an ancestor folder that was checked by user.
+      // Custom rules maintain absolute priority and cannot be included.
+      if (useCustomIgnore.value && node.isCustomIgnored) {
+        node.excluded = true;
+        isNodeExplicitlyIncluded = false;
+      } else {
+        node.excluded = false;
+        isNodeExplicitlyIncluded = true;
+      }
     } else {
-      // If not manually toggled, it's excluded if a rule matches OR if its parent is visually excluded.
-      // This establishes the default inherited exclusion for visual purposes.
+      // Default rule evaluation or inheritance from excluded parent
       node.excluded = isExcludedByRule || parentIsVisuallyExcluded;
+      isNodeExplicitlyIncluded = false;
     }
 
-     if (node.children && node.children.length > 0) {
-      _updateAllNodesExcludedStateRecursive(node.children, node.excluded); // Pass current node's new visual excluded state
-     }
-   });
- }
+    if (node.children && node.children.length > 0) {
+      _updateAllNodesExcludedStateRecursive(node.children, node.excluded, isNodeExplicitlyIncluded);
+    }
+  });
+}
 
 function toggleGitignoreHandler(value) {
   useGitignore.value = value;
@@ -352,7 +358,12 @@ function toggleCustomIgnoreHandler(value) {
   useCustomIgnore.value = value;
   addLog(`Custom ignore rules usage changed to: ${value}. Updating tree and watcher...`, 'info', 'bottom');
   SetUseCustomIgnore(value)
-    .then(() => addLog(`Watchman instructed to use custom ignores: ${value}`, 'debug'))
+    .then(() => {
+      addLog(`Watchman instructed to use custom ignores: ${value}`, 'debug');
+      if (projectRoot.value) {
+        loadFileTree(projectRoot.value);
+      }
+    })
     .catch(err => addLog(`Error setting useCustomIgnore in backend: ${err}`, 'error'));
 }
 

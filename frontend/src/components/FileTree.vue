@@ -1,6 +1,6 @@
 <template>
   <ul class="file-tree">
-    <li v-for="node in nodes" :key="node.path" :class="{ 'excluded-node': node.excluded }">
+    <li v-for="node in nodes" :key="node.path" v-show="!(useCustomIgnore && node.isCustomIgnored)" :class="{ 'excluded-node': node.excluded }">
       <div class="node-item" :style="{ 'padding-left': depth * 20 + 'px' }">
         <span v-if="node.isDir" @click="toggleExpand(node)" class="toggler">
           {{ node.expanded ? '▼' : '▶' }}
@@ -21,6 +21,7 @@
         v-if="node.isDir && node.expanded && node.children" 
         :nodes="node.children" 
         :project-root="projectRoot"
+        :use-custom-ignore="useCustomIgnore"
         :depth="depth + 1"
         @toggle-exclude="emitToggleExclude"
       />
@@ -34,6 +35,10 @@ import { defineProps, defineEmits } from 'vue';
 const props = defineProps({
   nodes: Array,
   projectRoot: String,
+  useCustomIgnore: {
+    type: Boolean,
+    default: true
+  },
   depth: {
     type: Number,
     default: 0

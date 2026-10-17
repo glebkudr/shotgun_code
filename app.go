@@ -165,19 +165,21 @@ func (a *App) ListFiles(dirPath string) ([]*FileNode, error) {
 		gitIgn = nil
 	}
 
-	// App-level custom ignore patterns are in a.currentCustomIgnorePatterns
-
-	rootNode := &FileNode{
-		Name:         filepath.Base(dirPath),
-		Path:         dirPath,
-		RelPath:      ".",
-		IsDir:        true,
-		IsGitignored: false, // Root itself is not gitignored by default
-		// IsCustomIgnored for root is also false by default, specific patterns would be needed
-		IsCustomIgnored: a.currentCustomIgnorePatterns != nil && a.currentCustomIgnorePatterns.MatchesPath("."),
+	var customIgn *gitignore.GitIgnore
+	if a.useCustomIgnore {
+		customIgn = a.currentCustomIgnorePatterns
 	}
 
-	children, err := buildTreeRecursive(context.TODO(), dirPath, dirPath, gitIgn, a.currentCustomIgnorePatterns, 0)
+	rootNode := &FileNode{
+		Name:            filepath.Base(dirPath),
+		Path:            dirPath,
+		RelPath:         ".",
+		IsDir:           true,
+		IsGitignored:    false, // Root itself is not gitignored by default
+		IsCustomIgnored: customIgn != nil && customIgn.MatchesPath("."),
+	}
+
+	children, err := buildTreeRecursive(context.TODO(), dirPath, dirPath, gitIgn, customIgn, 0)
 	if err != nil {
 		return []*FileNode{rootNode}, fmt.Errorf("error building children tree for %s: %w", dirPath, err)
 	}
@@ -221,6 +223,12 @@ func buildTreeRecursive(ctx context.Context, currentPath, rootPath string, gitIg
 			isCustomIgnored = customIgn.MatchesPath(pathToMatch)
 		}
 
+		// Custom rules maintain absolute priority - files and folders matching custom rules
+		// must remain completely inaccessible and hidden, with no ability to expand or view contents.
+		if isCustomIgnored {
+			continue
+		}
+
 		if depth < 2 || strings.Contains(relPath, "node_modules") || strings.HasSuffix(relPath, ".log") {
 			fmt.Printf("Checking path: '%s' (original relPath: '%s'), IsDir: %v, Gitignored: %v, CustomIgnored: %v\n", pathToMatch, relPath, entry.IsDir(), isGitignored, isCustomIgnored)
 		}
@@ -236,21 +244,16 @@ func buildTreeRecursive(ctx context.Context, currentPath, rootPath string, gitIg
 
 		if entry.IsDir() {
 			// If it's a directory, recursively call buildTree.
-			// Recursion stops only for folders ignored by custom rules.
 			// For folders matched by .gitignore, recursion continues so the UI can show their contents
 			// and allow selective inclusion of files inside gitignored folders.
-			if !isCustomIgnored {
-				children, err := buildTreeRecursive(ctx, nodePath, rootPath, gitIgn, customIgn, depth+1)
-				if err != nil {
-					if errors.Is(err, context.Canceled) {
-						return nil, err // Propagate cancellation
-					}
-					// runtime.LogWarnf(ctx, "Error building subtree for %s: %v", nodePath, err) // Use ctx if available
-					runtime.LogWarningf(context.Background(), "Error building subtree for %s: %v", nodePath, err) // Fallback for now
-					// Decide: skip this dir or return error up. For now, skip with log.
-				} else {
-					node.Children = children
+			children, err := buildTreeRecursive(ctx, nodePath, rootPath, gitIgn, customIgn, depth+1)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil, err // Propagate cancellation
 				}
+				runtime.LogWarningf(context.Background(), "Error building subtree for %s: %v", nodePath, err) // Fallback for now
+			} else {
+				node.Children = children
 			}
 		}
 		nodes = append(nodes, node)
@@ -459,6 +462,14 @@ func (a *App) countProcessableItems(jobCtx context.Context, rootDir string, excl
 			path := filepath.Join(currentPath, entry.Name())
 			relPath, _ := filepath.Rel(rootDir, path)
 
+			pathToMatch := relPath
+			if entry.IsDir() && !strings.HasSuffix(pathToMatch, string(os.PathSeparator)) {
+				pathToMatch += string(os.PathSeparator)
+			}
+			if a.useCustomIgnore && a.currentCustomIgnorePatterns != nil && a.currentCustomIgnorePatterns.MatchesPath(pathToMatch) {
+				continue
+			}
+
 			if excludedMap[relPath] {
 				continue
 			}
@@ -490,6 +501,12 @@ type generationProgressState struct {
 }
 
 func (a *App) emitProgress(state *generationProgressState) {
+	if a.ctx == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
 	runtime.EventsEmit(a.ctx, "shotgunContextGenerationProgress", map[string]int{
 		"current": state.processedItems,
 		"total":   state.totalItems,
@@ -562,6 +579,13 @@ func (a *App) generateShotgunOutputWithProgress(jobCtx context.Context, rootDir 
 		for _, entry := range entries {
 			path := filepath.Join(currentPath, entry.Name())
 			relPath, _ := filepath.Rel(rootDir, path)
+			pathToMatch := relPath
+			if entry.IsDir() && !strings.HasSuffix(pathToMatch, string(os.PathSeparator)) {
+				pathToMatch += string(os.PathSeparator)
+			}
+			if a.useCustomIgnore && a.currentCustomIgnorePatterns != nil && a.currentCustomIgnorePatterns.MatchesPath(pathToMatch) {
+				continue
+			}
 			if !excludedMap[relPath] {
 				visibleEntries = append(visibleEntries, entry)
 			}
